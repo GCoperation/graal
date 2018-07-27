@@ -31,8 +31,15 @@ package com.oracle.svm.core.posix.zipfile;
 //package java.util.zip;
 
 // SVM start
+import com.oracle.svm.core.annotate.Alias;
+import com.oracle.svm.core.annotate.RecomputeFieldValue;
 import com.oracle.svm.core.annotate.Substitute;
 import com.oracle.svm.core.annotate.TargetClass;
+import org.graalvm.nativeimage.Platform;
+import org.graalvm.nativeimage.Platforms;
+
+import java.net.URL;
+import java.util.jar.JarFile;
 import java.util.zip.Inflater;
 import java.util.zip.InflaterInputStream;
 import java.util.zip.ZipException;
@@ -53,7 +60,6 @@ import java.io.RandomAccessFile;
 import java.nio.charset.Charset;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.attribute.BasicFileAttributes;
-import java.nio.file.Path;
 import java.nio.file.Files;
 
 import java.util.ArrayDeque;
@@ -1402,5 +1408,30 @@ public final class ZipFile implements ZipConstants, Closeable {
                 count++;
             return count;
         }
+    }
+
+    @Platforms({ Platform.LINUX.class, Platform.DARWIN.class})
+    @TargetClass(java.util.jar.JarFile.class)
+    static final class Target_java_util_jar_JarFile {
+        @Substitute
+        private String[] getMetaInfEntryNames() {
+            return ((ZipFile)(Object)this).getMetaInfEntryNames();
+        }
+    }
+
+    @Platforms({ Platform.LINUX.class, Platform.DARWIN.class})
+    @TargetClass(className = "sun.net.www.protocol.jar.JarFileFactory")
+    static final class Target_sun_net_www_protocol_jar_JarFileFactory {
+        @Alias//
+        @RecomputeFieldValue(kind = RecomputeFieldValue.Kind.NewInstance, declClass = HashMap.class, isFinal = true)//
+        private static HashMap<String, JarFile> fileCache;
+
+        @Alias//
+        @RecomputeFieldValue(kind = RecomputeFieldValue.Kind.NewInstance, declClass = HashMap.class, isFinal = true)//
+        private static HashMap<JarFile, URL> urlCache;
+
+        @Alias//
+        @RecomputeFieldValue(kind = RecomputeFieldValue.Kind.NewInstance, declClassName = "sun.net.www.protocol.jar.JarFileFactory", isFinal = true)//
+        private static Target_sun_net_www_protocol_jar_JarFileFactory instance;
     }
 }

@@ -64,8 +64,6 @@ import static com.oracle.svm.core.posix.headers.Stat.S_IXUSR;
 import static com.oracle.svm.core.posix.headers.Stat.chmod;
 import static com.oracle.svm.core.posix.headers.Stat.fstat;
 import static com.oracle.svm.core.posix.headers.Stat.mkdir;
-import static com.oracle.svm.core.posix.headers.Stat.stat;
-import static com.oracle.svm.core.posix.headers.Statvfs.statvfs;
 import static com.oracle.svm.core.posix.headers.Stdio.remove;
 import static com.oracle.svm.core.posix.headers.Stdio.rename;
 import static com.oracle.svm.core.posix.headers.Stdlib.realpath;
@@ -81,7 +79,6 @@ import static com.oracle.svm.core.posix.headers.Unistd.close;
 import static com.oracle.svm.core.posix.headers.Unistd.ftruncate;
 import static com.oracle.svm.core.posix.headers.Unistd.lseek;
 
-import java.io.Console;
 import java.io.File;
 import java.io.FileDescriptor;
 import java.io.FileNotFoundException;
@@ -92,7 +89,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.locks.ReentrantLock;
 
-import org.graalvm.compiler.core.common.SuppressFBWarnings;
+import org.graalvm.compiler.serviceprovider.GraalServices;
 import org.graalvm.nativeimage.Platform;
 import org.graalvm.nativeimage.Platforms;
 import org.graalvm.nativeimage.StackValue;
@@ -115,6 +112,10 @@ import com.oracle.svm.core.posix.headers.Dirent.DIR;
 import com.oracle.svm.core.posix.headers.Dirent.dirent;
 import com.oracle.svm.core.posix.headers.Dirent.direntPointer;
 import com.oracle.svm.core.posix.headers.LibC;
+import com.oracle.svm.core.posix.headers.Stat;
+import com.oracle.svm.core.posix.headers.Stat.stat;
+import com.oracle.svm.core.posix.headers.Statvfs;
+import com.oracle.svm.core.posix.headers.Statvfs.statvfs;
 import com.oracle.svm.core.posix.headers.Termios;
 import com.oracle.svm.core.posix.headers.Time.timeval;
 import com.oracle.svm.core.posix.headers.Unistd;
@@ -151,10 +152,10 @@ final class Target_java_io_UnixFileSystem {
 
     @Substitute
     public int getBooleanAttributes0(File f) {
-        stat stat = StackValue.get(SizeOf.get(stat.class));
+        Stat.stat stat = StackValue.get(Stat.stat.class);
         try (CCharPointerHolder pathPin = CTypeConversion.toCString(f.getPath())) {
             CCharPointer pathPtr = pathPin.get();
-            if (stat(pathPtr, stat) == 0) {
+            if (Stat.stat(pathPtr, stat) == 0) {
                 int fmt = stat.st_mode() & S_IFMT();
                 return Target_java_io_FileSystem.BA_EXISTS | ((fmt == S_IFREG()) ? Target_java_io_FileSystem.BA_REGULAR : 0) | ((fmt == S_IFDIR()) ? Target_java_io_FileSystem.BA_DIRECTORY : 0);
             } else {
@@ -184,10 +185,10 @@ final class Target_java_io_UnixFileSystem {
 
     @Substitute
     private long getLength(File f) {
-        stat stat = StackValue.get(SizeOf.get(stat.class));
+        Stat.stat stat = StackValue.get(Stat.stat.class);
         try (CCharPointerHolder pathPin = CTypeConversion.toCString(f.getPath())) {
             CCharPointer pathPtr = pathPin.get();
-            if (stat(pathPtr, stat) == 0) {
+            if (Stat.stat(pathPtr, stat) == 0) {
                 return stat.st_size();
             } else {
                 return 0;
@@ -209,7 +210,7 @@ final class Target_java_io_UnixFileSystem {
 
         List<String> entries = new ArrayList<>();
         dirent dirent = StackValue.get(SizeOf.get(dirent.class) + PATH_MAX() + 1);
-        direntPointer resultDirent = StackValue.get(SizeOf.get(direntPointer.class));
+        direntPointer resultDirent = StackValue.get(direntPointer.class);
 
         while (readdir_r(dir, dirent, resultDirent) == 0 && !resultDirent.read().isNull()) {
             String name = CTypeConversion.toJavaString(dirent.d_name());
@@ -317,12 +318,12 @@ final class Target_java_io_UnixFileSystem {
 
     @Substitute
     public long getSpace(File f, int t) {
-        statvfs statvfs = StackValue.get(SizeOf.get(statvfs.class));
+        statvfs statvfs = StackValue.get(statvfs.class);
         LibC.memset(statvfs, WordFactory.zero(), WordFactory.unsigned(SizeOf.get(statvfs.class)));
 
         try (CCharPointerHolder pathPin = CTypeConversion.toCString(f.getPath())) {
             CCharPointer pathPtr = pathPin.get();
-            if (statvfs(pathPtr, statvfs) == 0) {
+            if (Statvfs.statvfs(pathPtr, statvfs) == 0) {
                 final long frsize = statvfs.f_frsize();
                 if (t == Target_java_io_FileSystem.SPACE_TOTAL) {
                     return frsize * statvfs.f_blocks();
@@ -340,10 +341,10 @@ final class Target_java_io_UnixFileSystem {
 
     @Substitute
     public boolean setReadOnly(File f) {
-        stat stat = StackValue.get(SizeOf.get(stat.class));
+        stat stat = StackValue.get(stat.class);
         try (CCharPointerHolder pathPin = CTypeConversion.toCString(f.getPath())) {
             CCharPointer pathPtr = pathPin.get();
-            if (stat(pathPtr, stat) == 0) {
+            if (Stat.stat(pathPtr, stat) == 0) {
                 if (chmod(pathPtr, stat.st_mode() & ~(S_IWUSR() | S_IWGRP() | S_IWOTH())) >= 0) {
                     return true;
                 }
@@ -365,10 +366,10 @@ final class Target_java_io_UnixFileSystem {
             throw VMError.shouldNotReachHere("illegal access mode");
         }
 
-        stat stat = StackValue.get(SizeOf.get(stat.class));
+        stat stat = StackValue.get(stat.class);
         try (CCharPointerHolder pathPin = CTypeConversion.toCString(f.getPath())) {
             CCharPointer pathPtr = pathPin.get();
-            if (stat(pathPtr, stat) == 0) {
+            if (Stat.stat(pathPtr, stat) == 0) {
                 int newMode;
                 if (enable) {
                     newMode = stat.st_mode() | amode;
@@ -407,10 +408,10 @@ final class Target_java_io_UnixFileSystem {
 
     @Substitute
     public long getLastModifiedTime(File f) {
-        stat stat = StackValue.get(SizeOf.get(stat.class));
+        stat stat = StackValue.get(stat.class);
         try (CCharPointerHolder pathPin = CTypeConversion.toCString(f.getPath())) {
             CCharPointer pathPtr = pathPin.get();
-            if (stat(pathPtr, stat) == 0) {
+            if (Stat.stat(pathPtr, stat) == 0) {
                 return 1000 * stat.st_mtime();
             }
         }
@@ -419,11 +420,11 @@ final class Target_java_io_UnixFileSystem {
 
     @Substitute
     public boolean setLastModifiedTime(File f, long time) {
-        stat stat = StackValue.get(SizeOf.get(stat.class));
+        stat stat = StackValue.get(stat.class);
         try (CCharPointerHolder pathPin = CTypeConversion.toCString(f.getPath())) {
             CCharPointer pathPtr = pathPin.get();
-            if (stat(pathPtr, stat) == 0) {
-                timeval timeval = StackValue.get(2, SizeOf.get(timeval.class));
+            if (Stat.stat(pathPtr, stat) == 0) {
+                timeval timeval = StackValue.get(2, timeval.class);
 
                 // preserve access time
                 timeval access = timeval.addressOf(0);
@@ -477,11 +478,11 @@ final class Target_java_io_FileInputStream {
 
         SignedWord ret = WordFactory.zero();
         boolean av = false;
-        stat stat = StackValue.get(SizeOf.get(stat.class));
+        stat stat = StackValue.get(stat.class);
         if (fstat(handle, stat) >= 0) {
             int mode = stat.st_mode();
             if (Util_java_io_FileInputStream.isChr(mode) || Util_java_io_FileInputStream.isFifo(mode) || Util_java_io_FileInputStream.isSock(mode)) {
-                CIntPointer np = StackValue.get(SizeOf.get(CIntPointer.class));
+                CIntPointer np = StackValue.get(CIntPointer.class);
                 if (ioctl(handle, FIONREAD(), np) >= 0) {
                     ret = WordFactory.signed(np.read());
                     av = true;
@@ -697,6 +698,7 @@ final class Target_java_io_Console {
     Charset cs;
 
     @Alias //
+    @TargetElement(onlyWith = JDK8OrEarlier.class) //
     static boolean echoOff;
 
     @Alias
@@ -721,10 +723,12 @@ final class Target_java_io_Console {
     // 050                           jboolean on) {
     @Substitute
     static boolean echo(boolean on) throws IOException {
-        /* Initialize the echo shut down hook, once. */
-        Util_java_io_Console.addShutdownHook();
+        if (GraalServices.Java8OrEarlier) {
+            /* Initialize the echo shut down hook, once. */
+            Util_java_io_Console_JDK8OrEarlier.addShutdownHook();
+        }
         // 052     struct termios tio;
-        final Termios.termios tio = StackValue.get(SizeOf.get(Termios.termios.class));
+        final Termios.termios tio = StackValue.get(Termios.termios.class);
         // 053     jboolean old;
         boolean old;
         // 054     int tty = fileno(stdin);
@@ -759,16 +763,8 @@ final class Target_java_io_Console {
 }
 
 /** Utility methods for {@link Target_java_io_Console}. */
-class Util_java_io_Console {
-
-    @SuppressFBWarnings(value = "BC", justification = "Cast for @TargetClass")
-    static Console fromTarget(Target_java_io_Console tjic) {
-        return Console.class.cast(tjic);
-    }
-
-    public static Console toConsole(Target_java_io_Console tjic) {
-        return fromTarget(tjic);
-    }
+/* onlyWith = JDK8OrEarlier.class. */
+class Util_java_io_Console_JDK8OrEarlier {
 
     /** An initialization flag. */
     static volatile boolean initialized = false;

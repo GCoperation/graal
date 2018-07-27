@@ -31,12 +31,16 @@ import java.lang.reflect.Proxy;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
+import java.util.Objects;
 import java.util.concurrent.atomic.AtomicIntegerFieldUpdater;
 import java.util.concurrent.atomic.AtomicLongFieldUpdater;
 import java.util.concurrent.atomic.AtomicReferenceFieldUpdater;
+import java.util.stream.Stream;
 
 import org.graalvm.compiler.api.replacements.SnippetReflectionProvider;
 import org.graalvm.compiler.bytecode.BytecodeProvider;
+import org.graalvm.compiler.core.common.CompressEncoding;
+import org.graalvm.compiler.core.common.type.AbstractObjectStamp;
 import org.graalvm.compiler.core.common.type.IntegerStamp;
 import org.graalvm.compiler.core.common.type.Stamp;
 import org.graalvm.compiler.core.common.type.StampFactory;
@@ -54,6 +58,8 @@ import org.graalvm.compiler.nodes.NodeView;
 import org.graalvm.compiler.nodes.PiNode;
 import org.graalvm.compiler.nodes.ValueNode;
 import org.graalvm.compiler.nodes.calc.ConditionalNode;
+import org.graalvm.compiler.nodes.calc.NarrowNode;
+import org.graalvm.compiler.nodes.calc.ZeroExtendNode;
 import org.graalvm.compiler.nodes.extended.FixedValueAnchorNode;
 import org.graalvm.compiler.nodes.extended.GetClassNode;
 import org.graalvm.compiler.nodes.extended.LoadHubNode;
@@ -66,8 +72,11 @@ import org.graalvm.compiler.nodes.java.ArrayLengthNode;
 import org.graalvm.compiler.nodes.java.InstanceOfDynamicNode;
 import org.graalvm.compiler.nodes.java.NewArrayNode;
 import org.graalvm.compiler.nodes.java.StoreIndexedNode;
+import org.graalvm.compiler.nodes.type.NarrowOopStamp;
 import org.graalvm.compiler.options.Option;
 import org.graalvm.compiler.replacements.nodes.BasicObjectCloneNode;
+import org.graalvm.compiler.word.WordCastNode;
+import org.graalvm.nativeimage.ImageInfo;
 import org.graalvm.nativeimage.ImageSingletons;
 import org.graalvm.nativeimage.Platform;
 import org.graalvm.nativeimage.RuntimeReflection;
@@ -84,6 +93,8 @@ import com.oracle.graal.pointsto.nodes.AnalysisArraysCopyOfNode;
 import com.oracle.graal.pointsto.nodes.AnalysisUnsafePartitionLoadNode;
 import com.oracle.graal.pointsto.nodes.AnalysisUnsafePartitionStoreNode;
 import com.oracle.graal.pointsto.nodes.ConvertUnknownValueNode;
+import com.oracle.svm.core.amd64.FrameAccess;
+import com.oracle.svm.core.config.ConfigurationValues;
 import com.oracle.svm.core.graal.jdk.SubstrateArraysCopyOfNode;
 import com.oracle.svm.core.graal.jdk.SubstrateObjectCloneNode;
 import com.oracle.svm.core.graal.nodes.FarReturnNode;
@@ -96,13 +107,17 @@ import com.oracle.svm.core.graal.nodes.ReadInstructionPointerNode;
 import com.oracle.svm.core.graal.nodes.ReadRegisterFixedNode;
 import com.oracle.svm.core.graal.nodes.ReadReturnAddressNode;
 import com.oracle.svm.core.graal.nodes.ReadStackPointerNode;
+import com.oracle.svm.core.graal.nodes.SubstrateCompressionNode;
 import com.oracle.svm.core.graal.nodes.SubstrateDynamicNewArrayNode;
 import com.oracle.svm.core.graal.nodes.SubstrateDynamicNewInstanceNode;
+import com.oracle.svm.core.graal.nodes.SubstrateNarrowOopStamp;
 import com.oracle.svm.core.graal.nodes.TestDeoptimizeNode;
 import com.oracle.svm.core.graal.nodes.WriteStackPointerNode;
 import com.oracle.svm.core.graal.stackvalue.StackValueNode;
 import com.oracle.svm.core.graal.stackvalue.StackValueNode.StackSlotIdentity;
 import com.oracle.svm.core.heap.PinnedAllocator;
+import com.oracle.svm.core.heap.ReferenceAccess;
+import com.oracle.svm.core.heap.ReferenceAccessImpl;
 import com.oracle.svm.core.jdk.proxy.DynamicProxyRegistry;
 import com.oracle.svm.core.meta.SharedMethod;
 import com.oracle.svm.core.meta.SubstrateObjectConstant;
@@ -114,6 +129,7 @@ import com.oracle.svm.hosted.GraalEdgeUnsafePartition;
 import jdk.vm.ci.meta.ConstantReflectionProvider;
 import jdk.vm.ci.meta.DeoptimizationAction;
 import jdk.vm.ci.meta.DeoptimizationReason;
+import jdk.vm.ci.meta.JavaConstant;
 import jdk.vm.ci.meta.JavaKind;
 import jdk.vm.ci.meta.Local;
 import jdk.vm.ci.meta.LocalVariableTable;
@@ -134,12 +150,13 @@ public class SubstrateGraphBuilderPlugins {
 
         // register the substratevm plugins
         registerSystemPlugins(metaAccess, plugins);
+        registerImageInfoPlugins(metaAccess, plugins);
         registerProxyPlugins(snippetReflection, plugins, analysis);
         registerAtomicUpdaterPlugins(metaAccess, snippetReflection, plugins, analysis);
         registerObjectPlugins(plugins);
         registerUnsafePlugins(plugins);
         registerKnownIntrinsicsPlugins(plugins, analysis);
-        registerStackValuePlugins(plugins);
+        registerStackValuePlugins(snippetReflection, plugins);
         registerPinnedAllocatorPlugins(constantReflection, plugins);
         registerArraysPlugins(plugins, analysis);
         registerArrayPlugins(plugins);
@@ -150,6 +167,7 @@ public class SubstrateGraphBuilderPlugins {
         registerVMConfigurationPlugins(snippetReflection, plugins);
         registerPlatformPlugins(snippetReflection, plugins);
         registerSizeOfPlugins(snippetReflection, plugins);
+        registerReferenceAccessPlugins(plugins);
     }
 
     private static void registerSystemPlugins(MetaAccessProvider metaAccess, InvocationPlugins plugins) {
@@ -159,6 +177,34 @@ public class SubstrateGraphBuilderPlugins {
             public boolean apply(GraphBuilderContext b, ResolvedJavaMethod targetMethod, Receiver receiver) {
                 /* System.getSecurityManager() always returns null. */
                 b.addPush(JavaKind.Object, ConstantNode.forConstant(SubstrateObjectConstant.forObject(null), metaAccess, b.getGraph()));
+                return true;
+            }
+        });
+    }
+
+    private static void registerImageInfoPlugins(MetaAccessProvider metaAccess, InvocationPlugins plugins) {
+        Registration proxyRegistration = new Registration(plugins, ImageInfo.class);
+        proxyRegistration.register0("inImageCode", new InvocationPlugin() {
+            /** See {@link ImageInfo#inImageCode()}. */
+            @Override
+            public boolean apply(GraphBuilderContext b, ResolvedJavaMethod targetMethod, Receiver receiver) {
+                b.push(JavaKind.Boolean, ConstantNode.forConstant(JavaConstant.TRUE, metaAccess, b.getGraph()));
+                return true;
+            }
+        });
+        proxyRegistration.register0("inImageBuildtimeCode", new InvocationPlugin() {
+            /** See {@link ImageInfo#inImageBuildtimeCode()}. */
+            @Override
+            public boolean apply(GraphBuilderContext b, ResolvedJavaMethod targetMethod, Receiver receiver) {
+                b.push(JavaKind.Boolean, ConstantNode.forConstant(JavaConstant.FALSE, metaAccess, b.getGraph()));
+                return true;
+            }
+        });
+        proxyRegistration.register0("inImageRuntimeCode", new InvocationPlugin() {
+            /** See {@link ImageInfo#inImageRuntimeCode()}. */
+            @Override
+            public boolean apply(GraphBuilderContext b, ResolvedJavaMethod targetMethod, Receiver receiver) {
+                b.push(JavaKind.Boolean, ConstantNode.forConstant(JavaConstant.TRUE, metaAccess, b.getGraph()));
                 return true;
             }
         });
@@ -190,44 +236,7 @@ public class SubstrateGraphBuilderPlugins {
      * in the {@link DynamicProxyRegistry}.
      */
     private static void interceptProxyInterfaces(GraphBuilderContext b, ResolvedJavaMethod targetMethod, SnippetReflectionProvider snippetReflection, ValueNode interfacesNode) {
-        Class<?>[] interfaces = null;
-        if (interfacesNode.isConstant()) {
-            /*
-             * The array is a constant, however that doesn't make the array immutable, i.e., its
-             * elements can still be changed. We assume that will not happen.
-             */
-            interfaces = snippetReflection.asObject(Class[].class, interfacesNode.asJavaConstant());
-
-        } else if (interfacesNode instanceof NewArrayNode) {
-            /*
-             * Find the elements written to the array. If all are constants they will be used as the
-             * proxy interfaces.
-             */
-            List<Class<?>> interfacesList = new ArrayList<>();
-            NewArrayNode newArray = (NewArrayNode) interfacesNode;
-
-            /*
-             * Walk down the control flow successor as long as we find StoreIndexedNode. Those are
-             * values written in the array.
-             */
-            assert newArray.successors().count() <= 1 : "Detected node with multiple successors: " + newArray;
-            Node successor = newArray.successors().first();
-            while (successor instanceof StoreIndexedNode) {
-                StoreIndexedNode store = (StoreIndexedNode) successor;
-                assert store.array().equals(newArray);
-                ValueNode valueNode = store.value();
-                if (valueNode.isConstant() && !valueNode.isNullConstant()) {
-                    interfacesList.add(snippetReflection.asObject(Class.class, valueNode.asJavaConstant()));
-                } else {
-                    /* If not all interfaces are non-null constants we bail out. */
-                    interfacesList = null;
-                    break;
-                }
-                assert store.successors().count() <= 1 : "Detected node with multiple successors: " + store;
-                successor = store.successors().first();
-            }
-            interfaces = interfacesList != null ? interfacesList.toArray(new Class<?>[0]) : null;
-        }
+        Class<?>[] interfaces = extractClassArray(snippetReflection, interfacesNode);
         if (interfaces != null) {
             /* The interfaces array can be empty. The java.lang.reflect.Proxy API allows it. */
             ImageSingletons.lookup(DynamicProxyRegistry.class).addProxyClass(interfaces);
@@ -241,6 +250,89 @@ public class SubstrateGraphBuilderPlugins {
                                 " reached from " + b.getGraph().method().format("%H.%n(%p)") + ".");
             }
         }
+    }
+
+    /**
+     * Try to extract a Class array from a ValueNode. It does not guarantee that the array content
+     * will not change.
+     */
+    static Class<?>[] extractClassArray(SnippetReflectionProvider snippetReflection, ValueNode arrayNode) {
+        return extractClassArray(snippetReflection, arrayNode, false);
+    }
+
+    /**
+     * Try to extract a Class array from a ValueNode. There are two situations:
+     *
+     * 1. The node is a ConstantNode. Then we get its initial value. However, since Java doesn't
+     * have immutable arrays this method cannot guarantee that the array content will not change.
+     * Therefore, if <code>exact</code> is set to true we return null.
+     *
+     * 2. The node is a NewArrayNode. Then we track the stores in the array as long as all are
+     * constants and there is no control flow split. If the content of the array cannot be determine
+     * a null value is returned.
+     */
+    static Class<?>[] extractClassArray(SnippetReflectionProvider snippetReflection, ValueNode arrayNode, boolean exact) {
+        if (arrayNode.isConstant() && !exact) {
+            /*
+             * The array is a constant, however that doesn't make the array immutable, i.e., its
+             * elements can still be changed. We assume that will not happen.
+             */
+            Class<?>[] classes = snippetReflection.asObject(Class[].class, arrayNode.asJavaConstant());
+
+            /*
+             * If any of the element is null just bailout, this is probably a situation where the
+             * array will be filled in later and we don't track that.
+             */
+            return classes == null ? null : Stream.of(classes).allMatch(Objects::nonNull) ? classes : null;
+
+        } else if (arrayNode instanceof NewArrayNode) {
+            /*
+             * Find the elements written to the array. If the array length is a constant, all
+             * written elements are constants and all array elements are filled then return the
+             * array elements.
+             */
+            NewArrayNode newArray = (NewArrayNode) arrayNode;
+            ValueNode newArrayLengthNode = newArray.length();
+            if (!newArrayLengthNode.isJavaConstant()) {
+                /*
+                 * If the array size is not a constant we bail out early since we cannot check that
+                 * all array elements are filled.
+                 */
+                return null;
+            }
+            assert newArrayLengthNode.asJavaConstant().getJavaKind() == JavaKind.Int;
+
+            /*
+             * Walk down the control flow successor as long as we find StoreIndexedNode. Those are
+             * values written in the array.
+             */
+            List<Class<?>> classList = new ArrayList<>();
+            assert newArray.successors().count() <= 1 : "Detected node with multiple successors: " + newArray;
+            Node successor = newArray.successors().first();
+            while (successor instanceof StoreIndexedNode) {
+                StoreIndexedNode store = (StoreIndexedNode) successor;
+                assert store.array().equals(newArray);
+                ValueNode valueNode = store.value();
+                if (valueNode.isConstant() && !valueNode.isNullConstant()) {
+                    classList.add(snippetReflection.asObject(Class.class, valueNode.asJavaConstant()));
+                } else {
+                    /* If not all classes are non-null constants we bail out. */
+                    classList = null;
+                    break;
+                }
+                assert store.successors().count() <= 1 : "Detected node with multiple successors: " + store;
+                successor = store.successors().first();
+            }
+
+            /*
+             * Check that all array elements are filled, i.e., the number of writes matches the size
+             * of the array.
+             */
+            int newArrayLength = newArrayLengthNode.asJavaConstant().asInt();
+
+            return classList != null && classList.size() == newArrayLength ? classList.toArray(new Class<?>[0]) : null;
+        }
+        return null;
     }
 
     private static void registerAtomicUpdaterPlugins(MetaAccessProvider metaAccess, SnippetReflectionProvider snippetReflection, InvocationPlugins plugins, boolean analysis) {
@@ -558,13 +650,24 @@ public class SubstrateGraphBuilderPlugins {
         return StampFactory.forUnsignedInteger(64, 1, 0xffffffffffffffffL);
     }
 
-    private static void registerStackValuePlugins(InvocationPlugins plugins) {
+    private static void registerStackValuePlugins(SnippetReflectionProvider snippetReflection, InvocationPlugins plugins) {
         Registration r = new Registration(plugins, StackValue.class);
 
         r.register1("get", int.class, new InvocationPlugin() {
             @Override
             public boolean apply(GraphBuilderContext b, ResolvedJavaMethod targetMethod, Receiver receiver, ValueNode sizeNode) {
                 long size = longValue(b, targetMethod, sizeNode, "size");
+                StackSlotIdentity slotIdentity = new StackSlotIdentity(b.getGraph().method().asStackTraceElement(b.bci()).toString());
+                b.addPush(JavaKind.Object, new StackValueNode(1, size, slotIdentity));
+                return true;
+            }
+        });
+        r.register1("get", Class.class, new InvocationPlugin() {
+            @SuppressWarnings("unchecked")
+            @Override
+            public boolean apply(GraphBuilderContext b, ResolvedJavaMethod targetMethod, Receiver unused, ValueNode classNode) {
+                Class<? extends PointerBase> clazz = constantObjectParameter(b, snippetReflection, targetMethod, 0, Class.class, classNode);
+                int size = SizeOf.get(clazz);
                 StackSlotIdentity slotIdentity = new StackSlotIdentity(b.getGraph().method().asStackTraceElement(b.bci()).toString());
                 b.addPush(JavaKind.Object, new StackValueNode(1, size, slotIdentity));
                 return true;
@@ -577,6 +680,18 @@ public class SubstrateGraphBuilderPlugins {
                 long elementSize = longValue(b, targetMethod, elementSizeNode, "elementSize");
                 StackSlotIdentity slotIdentity = new StackSlotIdentity(b.getGraph().method().asStackTraceElement(b.bci()).toString());
                 b.addPush(JavaKind.Object, new StackValueNode(numElements, elementSize, slotIdentity));
+                return true;
+            }
+        });
+        r.register2("get", int.class, Class.class, new InvocationPlugin() {
+            @SuppressWarnings("unchecked")
+            @Override
+            public boolean apply(GraphBuilderContext b, ResolvedJavaMethod targetMethod, Receiver unused, ValueNode numElementsNode, ValueNode classNode) {
+                long numElements = longValue(b, targetMethod, numElementsNode, "numElements");
+                Class<? extends PointerBase> clazz = constantObjectParameter(b, snippetReflection, targetMethod, 0, Class.class, classNode);
+                int size = SizeOf.get(clazz);
+                StackSlotIdentity slotIdentity = new StackSlotIdentity(b.getGraph().method().asStackTraceElement(b.bci()).toString());
+                b.addPush(JavaKind.Object, new StackValueNode(numElements, size, slotIdentity));
                 return true;
             }
         });
@@ -783,6 +898,40 @@ public class SubstrateGraphBuilderPlugins {
                 UnsignedWord result = SizeOf.unsigned(clazz);
 
                 b.notifyReplacedCall(targetMethod, b.addPush(JavaKind.Object, ConstantNode.forConstant(snippetReflection.forObject(result), b.getMetaAccess())));
+                return true;
+            }
+        });
+    }
+
+    private static void registerReferenceAccessPlugins(InvocationPlugins plugins) {
+        Registration r = new Registration(plugins, ReferenceAccessImpl.class);
+        r.register2("getCompressedRepresentation", Receiver.class, Object.class, new InvocationPlugin() {
+            @Override
+            public boolean apply(GraphBuilderContext b, ResolvedJavaMethod targetMethod, Receiver unused, ValueNode objectNode) {
+                if (ReferenceAccess.singleton().haveCompressedReferences()) {
+                    ValueNode compressedObj = SubstrateCompressionNode.compress(objectNode, ImageSingletons.lookup(CompressEncoding.class));
+                    JavaKind compressedIntKind = JavaKind.fromWordSize(ConfigurationValues.getObjectLayout().getReferenceSize());
+                    ValueNode compressedValue = b.add(WordCastNode.narrowOopToUntrackedWord(compressedObj, compressedIntKind));
+                    b.addPush(JavaKind.Object, ZeroExtendNode.convertUnsigned(compressedValue, FrameAccess.getWordStamp(), NodeView.DEFAULT));
+                } else {
+                    b.addPush(JavaKind.Object, WordCastNode.objectToUntrackedPointer(objectNode, FrameAccess.getWordKind()));
+                }
+                return true;
+            }
+        });
+        r.register2("uncompressReference", Receiver.class, UnsignedWord.class, new InvocationPlugin() {
+            @Override
+            public boolean apply(GraphBuilderContext b, ResolvedJavaMethod targetMethod, Receiver unused, ValueNode wordNode) {
+                if (ReferenceAccess.singleton().haveCompressedReferences()) {
+                    CompressEncoding encoding = ImageSingletons.lookup(CompressEncoding.class);
+                    JavaKind compressedIntKind = JavaKind.fromWordSize(ConfigurationValues.getObjectLayout().getReferenceSize());
+                    NarrowOopStamp compressedStamp = (NarrowOopStamp) SubstrateNarrowOopStamp.compressed((AbstractObjectStamp) StampFactory.object(), encoding);
+                    ValueNode narrowNode = b.add(NarrowNode.convertUnsigned(wordNode, StampFactory.forKind(compressedIntKind), NodeView.DEFAULT));
+                    WordCastNode compressedObj = b.add(WordCastNode.wordToNarrowObject(narrowNode, compressedStamp));
+                    b.addPush(JavaKind.Object, SubstrateCompressionNode.uncompress(compressedObj, encoding));
+                } else {
+                    b.addPush(JavaKind.Object, WordCastNode.wordToObject(wordNode, FrameAccess.getWordKind()));
+                }
                 return true;
             }
         });

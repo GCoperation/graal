@@ -384,7 +384,7 @@ final class Target_java_lang_UNIXProcess {
     @Substitute
     @SuppressWarnings({"static-method"})
     int waitForProcessExit(int ppid) {
-        CIntPointer statusptr = StackValue.get(SizeOf.get(CIntPointer.class));
+        CIntPointer statusptr = StackValue.get(CIntPointer.class);
         while (Wait.waitpid(ppid, statusptr, 0) < 0) {
             if (Errno.errno() == Errno.ECHILD()) {
                 return 0;
@@ -439,6 +439,7 @@ final class Target_java_lang_ProcessImpl {
     }
 }
 
+@Platforms({Platform.LINUX.class, Platform.DARWIN.class})
 final class Java_lang_UNIXProcess_Supplement {
 
     static final ThreadFactory reaperFactory = new ThreadFactory() {
@@ -533,10 +534,10 @@ final class Java_lang_UNIXProcess_Supplement {
                     return gotoFinally;
                 }
                 dirent dirent = WordFactory.pointer(buffer.rawValue());
-                direntPointer direntptr = StackValue.get(SizeOf.get(direntPointer.class));
+                direntPointer direntptr = StackValue.get(direntPointer.class);
                 int status;
                 while ((status = Dirent.readdir_r_no_transition(fddir, dirent, direntptr)) == 0 && direntptr.read().isNonNull()) {
-                    CCharPointerPointer endptr = StackValue.get(SizeOf.get(CCharPointerPointer.class));
+                    CCharPointerPointer endptr = StackValue.get(CCharPointerPointer.class);
                     long fd = LibC.strtol(dirent.d_name(), endptr, 10);
                     if (fd > maxFd && endptr.read().isNonNull() && endptr.read().read() == '\0') {
                         UnistdNoTransitions.close((int) fd);
@@ -568,7 +569,7 @@ final class Java_lang_UNIXProcess_Supplement {
                 final int fileStrlen = (int) LibC.strlen(file).rawValue();
                 int stickyErrno = 0;
 
-                final CCharPointerPointer saveptr = StackValue.get(SizeOf.get(CCharPointerPointer.class));
+                final CCharPointerPointer saveptr = StackValue.get(CCharPointerPointer.class);
                 saveptr.write(WordFactory.nullPointer());
                 CCharPointer searchDir = LibC.strtok_r(searchPaths, searchPathSeparator, saveptr);
                 while (searchDir.isNonNull()) {
@@ -740,7 +741,7 @@ final class Target_java_lang_System {
     @Substitute
     @Uninterruptible(reason = "Called from uninterruptible code.")
     public static long currentTimeMillis() {
-        timeval timeval = StackValue.get(SizeOf.get(timeval.class));
+        timeval timeval = StackValue.get(timeval.class);
         timezone timezone = WordFactory.nullPointer();
         gettimeofday(timeval, timezone);
         return timeval.tv_sec() * 1_000L + timeval.tv_usec() / 1_000L;
@@ -748,6 +749,7 @@ final class Target_java_lang_System {
 }
 
 @TargetClass(className = "java.lang.Shutdown")
+@Platforms({Platform.LINUX.class, Platform.DARWIN.class})
 final class Target_java_lang_Shutdown {
 
     @Substitute
@@ -772,6 +774,7 @@ final class Target_java_lang_Runtime {
 }
 
 /** Dummy class to have a class with the file's name. */
+@Platforms({Platform.LINUX.class, Platform.DARWIN.class})
 public final class PosixJavaLangSubstitutions {
 
     /** Private constructor: No instances. */

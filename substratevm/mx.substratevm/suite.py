@@ -42,7 +42,7 @@ suite = {
             ],
             "dependencies": [
                 "sdk:GRAAL_SDK",
-                "compiler:GRAAL_RUNTIME",
+                "compiler:GRAAL",
             ],
             "javaCompliance": "1.8",
             "checkstyleVersion" : "8.8",
@@ -77,6 +77,7 @@ suite = {
             "sourceDirs": ["src"],
             "dependencies": [
                 "com.oracle.svm.core.posix",
+                "com.oracle.svm.core.windows",
                 "compiler:GRAAL",
             ],
             "checkstyle": "com.oracle.svm.core",
@@ -104,11 +105,26 @@ suite = {
             "findbugs": "false",
         },
 
+        "com.oracle.svm.core.windows": {
+            "subDir": "src",
+            "sourceDirs": ["src"],
+            "dependencies": ["com.oracle.svm.core"],
+            "checkstyle": "com.oracle.svm.core",
+            "javaCompliance": "1.8",
+            "annotationProcessors": [
+                "compiler:GRAAL_NODEINFO_PROCESSOR",
+                "compiler:GRAAL_REPLACEMENTS_PROCESSOR",
+                "compiler:GRAAL_OPTIONS_PROCESSOR",
+            ],
+            "workingSets": "SVM",
+            "findbugs": "false",
+        },
+
         "com.oracle.graal.pointsto": {
             "subDir": "src",
             "sourceDirs": ["src"],
             "dependencies": [
-                "compiler:GRAAL_RUNTIME",
+                "compiler:GRAAL",
             ],
             "checkstyle": "com.oracle.graal.pointsto",
             "javaCompliance": "1.8",
@@ -442,6 +458,7 @@ suite = {
                 "com.oracle.svm.junit",
                 "com.oracle.svm.core",
                 "com.oracle.svm.core.posix",
+                "com.oracle.svm.core.windows",
                 "com.oracle.svm.core.genscavenge",
             ],
             "overlaps" : [
@@ -464,12 +481,12 @@ suite = {
             "dependencies": [
                 "com.oracle.svm.core",
                 "com.oracle.svm.core.posix",
+                "com.oracle.svm.core.windows",
                 "com.oracle.svm.core.graal",
                 "com.oracle.svm.core.genscavenge",
             ],
             "distDependencies": [
                 "sdk:GRAAL_SDK",
-                "compiler:GRAAL_RUNTIME",
                 "compiler:GRAAL",
             ],
             "exclude": [
@@ -545,7 +562,7 @@ suite = {
                 "com.oracle.graal.pointsto",
             ],
             "distDependencies": [
-                "compiler:GRAAL_RUNTIME",
+                "compiler:GRAAL",
             ],
             "exclude": [
             ]
@@ -576,10 +593,34 @@ suite = {
             "native" : True,
             "platformDependent" : True,
             "description" : "polyglot.nativeapi support distribution for the GraalVM",
-            "layout" : {
-                "./" : [
-                    "dependency:org.graalvm.polyglot.nativeapi.native/<os>-<arch>/*.o",
-                ],
+            "os_arch" : {
+                "linux": {
+                    "amd64" : {
+                         "layout" : {
+                             "./" : [
+                                 "dependency:org.graalvm.polyglot.nativeapi.native/<os>-<arch>/*.o",
+                             ],
+                         },
+                    },
+                },
+                "darwin": {
+                    "amd64" : {
+                         "layout" : {
+                             "./" : [
+                                 "dependency:org.graalvm.polyglot.nativeapi.native/<os>-<arch>/*.o",
+                             ],
+                         },
+                    },
+                },
+                "windows": {
+                    "amd64" : {
+                         "layout" : {
+                             "./" : [
+                                 "dependency:org.graalvm.polyglot.nativeapi.native/<os>-<arch>/*.obj",
+                             ],
+                         },
+                    },
+                },
             },
         },
 

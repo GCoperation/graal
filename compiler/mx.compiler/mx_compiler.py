@@ -469,13 +469,13 @@ def _gate_dacapo(name, iterations, extraVMarguments=None, force_serial_gc=True, 
         args += ['-t', str(threads)]
     _gate_java_benchmark(vmargs + ['-jar', dacapoJar, name] + args, r'^===== DaCapo 9\.12 ([a-zA-Z0-9_]+) PASSED in ([0-9]+) msec =====')
 
-def _jdk_includes_corba(jdk):
+def jdk_includes_corba(jdk):
     # corba has been removed since JDK11 (http://openjdk.java.net/jeps/320)
     return jdk.javaCompliance < '11'
 
 def _gate_scala_dacapo(name, iterations, extraVMarguments=None):
     vmargs = ['-Xms2g', '-XX:+UseSerialGC', '-XX:-UseCompressedOops', '-Dgraal.CompilationFailureAction=ExitVM'] + _remove_empty_entries(extraVMarguments)
-    if name == 'actors' and jdk.javaCompliance >= '9' and _jdk_includes_corba(jdk):
+    if name == 'actors' and jdk.javaCompliance >= '9' and jdk_includes_corba(jdk):
         vmargs += ['--add-modules', 'java.corba']
     scalaDacapoJar = mx.library('DACAPO_SCALA').get_path(True)
     _gate_java_benchmark(vmargs + ['-jar', scalaDacapoJar, name, '-n', str(iterations)], r'^===== DaCapo 0\.1\.0(-SNAPSHOT)? ([a-zA-Z0-9_]+) PASSED in ([0-9]+) msec =====')
@@ -584,7 +584,7 @@ def compiler_gate_runner(suites, unit_test_runs, bootstrap_tests, tasks, extraVM
     scala_dacapos_without_sa = {
         'actors':     1,
     }
-    if not _jdk_includes_corba(jdk):
+    if not jdk_includes_corba(jdk):
         mx.warn('Removing scaladacapo:actors from benchmarks because corba has been removed since JDK11 (http://openjdk.java.net/jeps/320)')
         del scala_dacapos_without_sa['actors']
 
@@ -604,6 +604,17 @@ def compiler_gate_runner(suites, unit_test_runs, bootstrap_tests, tasks, extraVM
     # ensure -Xcomp still works
     with Task('XCompMode:product', tasks, tags=GraalTags.test) as t:
         if t: run_vm(_remove_empty_entries(extraVMarguments) + ['-XX:+UseJVMCICompiler', '-Xcomp', '-version'])
+
+    if isJDK8:
+        # temporarily isolate those test (GR-10990)
+        cms = ['cms']
+        # ensure CMS still works
+        with Task('DaCapo_pmd:CMS', tasks, tags=cms) as t:
+            if t: _gate_dacapo('pmd', 4, _remove_empty_entries(extraVMarguments) + ['-XX:+UseJVMCICompiler', '-Xmx256M', '-XX:+UseConcMarkSweepGC'], threads=4, force_serial_gc=False, set_start_heap_size=False)
+
+        # ensure CMSIncrementalMode still works
+        with Task('DaCapo_pmd:CMSIncrementalMode', tasks, tags=cms) as t:
+            if t: _gate_dacapo('pmd', 4, _remove_empty_entries(extraVMarguments) + ['-XX:+UseJVMCICompiler', '-Xmx256M', '-XX:+UseConcMarkSweepGC', '-XX:+CMSIncrementalMode'], threads=4, force_serial_gc=False, set_start_heap_size=False)
 
     with Task('Javadoc', tasks, tags=GraalTags.doc) as t:
         # metadata package was deprecated, exclude it
