@@ -1,26 +1,42 @@
 /*
- * Copyright (c) 2017, 2017, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2017, 2018, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
- * This code is free software; you can redistribute it and/or modify it
- * under the terms of the GNU General Public License version 2 only, as
- * published by the Free Software Foundation.  Oracle designates this
- * particular file as subject to the "Classpath" exception as provided
- * by Oracle in the LICENSE file that accompanied this code.
+ * The Universal Permissive License (UPL), Version 1.0
  *
- * This code is distributed in the hope that it will be useful, but WITHOUT
- * ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
- * FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License
- * version 2 for more details (a copy is included in the LICENSE file that
- * accompanied this code).
+ * Subject to the condition set forth below, permission is hereby granted to any
+ * person obtaining a copy of this software, associated documentation and/or
+ * data (collectively the "Software"), free of charge and under any and all
+ * copyright rights in the Software, and any and all patent rights owned or
+ * freely licensable by each licensor hereunder covering either (i) the
+ * unmodified Software as contributed to or provided by such licensor, or (ii)
+ * the Larger Works (as defined below), to deal in both
  *
- * You should have received a copy of the GNU General Public License version
- * 2 along with this work; if not, write to the Free Software Foundation,
- * Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301 USA.
+ * (a) the Software, and
  *
- * Please contact Oracle, 500 Oracle Parkway, Redwood Shores, CA 94065 USA
- * or visit www.oracle.com if you need additional information or have any
- * questions.
+ * (b) any piece of software and/or hardware listed in the lrgrwrks.txt file if
+ * one is included with the Software each a "Larger Work" to which the Software
+ * is contributed by such licensors),
+ *
+ * without restriction, including without limitation the rights to copy, create
+ * derivative works of, display, perform, and distribute the Software and make,
+ * use, sell, offer for sale, import, export, have made, and have sold the
+ * Software and the Larger Work(s), and to sublicense the foregoing rights on
+ * either these or other terms.
+ *
+ * This license is subject to the following condition:
+ *
+ * The above copyright notice and either this complete permission notice or at a
+ * minimum a reference to the UPL must be included in all copies or substantial
+ * portions of the Software.
+ *
+ * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+ * IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+ * FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+ * AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+ * LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+ * OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+ * SOFTWARE.
  */
 package org.graalvm.launcher;
 
@@ -32,7 +48,6 @@ import java.nio.file.AccessDeniedException;
 import java.nio.file.Files;
 import java.nio.file.NoSuchFileException;
 import java.nio.file.Path;
-import java.nio.file.Paths;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Comparator;
@@ -377,31 +392,6 @@ public abstract class Launcher {
         printInstruments(engine, true);
     }
 
-    private static final Path FORCE_GRAAL_HOME;
-    private static final Path GRAAL_HOME_RELATIVE_PATH;
-    private static final Path LANGUAGE_HOME_RELATIVE_PATH;
-    static {
-        String forcedHome = System.getProperty("org.graalvm.launcher.home");
-        String relativeHome = System.getProperty("org.graalvm.launcher.relative.home");
-        String relativeLanguageHome = System.getProperty("org.graalvm.launcher.relative.language.home");
-        if (forcedHome != null && forcedHome.length() > 0) {
-            FORCE_GRAAL_HOME = Paths.get(forcedHome);
-        } else {
-            FORCE_GRAAL_HOME = null;
-        }
-        if (relativeHome != null && relativeHome.length() > 0) {
-            GRAAL_HOME_RELATIVE_PATH = Paths.get(relativeHome);
-        } else {
-            GRAAL_HOME_RELATIVE_PATH = null;
-        }
-        if (relativeLanguageHome != null && relativeLanguageHome.length() > 0) {
-            LANGUAGE_HOME_RELATIVE_PATH = Paths.get(relativeLanguageHome);
-        } else {
-            LANGUAGE_HOME_RELATIVE_PATH = null;
-        }
-        assert !(GRAAL_HOME_RELATIVE_PATH != null && LANGUAGE_HOME_RELATIVE_PATH != null) : "Can not set both org.graalvm.launcher.relative.home and org.graalvm.launcher.relative.language.home";
-    }
-
     /**
      * Returns the name of the main class for this launcher.
      *
@@ -436,7 +426,7 @@ public abstract class Launcher {
     }
 
     protected boolean isGraalVMAvailable() {
-        return System.getProperty("org.graalvm.home") != null;
+        return nativeAccess != null && nativeAccess.getGraalVMHome() != null;
     }
 
     @SuppressWarnings("fallthrough")
@@ -943,24 +933,6 @@ public abstract class Launcher {
     }
 
     private static final String CLASSPATH = System.getProperty("org.graalvm.launcher.classpath");
-    private static final String ALT_GRAALVM_VERSION_PROPERTY = "graalvm.version";
-    private static final String GRAALVM_VERSION_PROPERTY = "org.graalvm.version";
-    private static final String GRAALVM_VERSION;
-    static {
-        String version = System.getProperty(GRAALVM_VERSION_PROPERTY);
-        String altVersion = System.getProperty(ALT_GRAALVM_VERSION_PROPERTY);
-        if (version != null && altVersion == null) {
-            GRAALVM_VERSION = version;
-        } else if (altVersion != null && version == null) {
-            GRAALVM_VERSION = altVersion;
-        } else if (version != null && version.equals(altVersion)) {
-            GRAALVM_VERSION = version;
-        } else if (isAOT()) {
-            throw new RuntimeException("Could not find GraalVM version: " + GRAALVM_VERSION_PROPERTY + "='" + version + "' " + ALT_GRAALVM_VERSION_PROPERTY + "='" + altVersion + "'");
-        } else {
-            GRAALVM_VERSION = null;
-        }
-    }
 
     class Native {
         void maybeExec(List<String> args, boolean isPolyglot, Map<String, String> polyglotOptions, VMType defaultVmType) {
@@ -1035,6 +1007,13 @@ public abstract class Launcher {
                     remainingArgs.add(arg);
                 }
             }
+
+            /*
+             * All options are processed, now we can run the startup hooks that can depend on the
+             * option values.
+             */
+            RuntimeOptions.runStartupHooks();
+
             if (vmType == null) {
                 vmType = defaultVmType;
             }
@@ -1159,10 +1138,11 @@ public abstract class Launcher {
         }
 
         private void helpXOption() {
-            printOption("--native.Xmn<value>", "Sets the maximum size of the young generation, in bytes.");
-            printOption("--native.Xmx<value>", "Sets the maximum size of the heap, in bytes.");
-            printOption("--native.Xms<value>", "Sets the minimum size of the heap, in bytes.");
-            printOption("--native.Xss<value>", "Sets the size of each thread stack, in bytes.");
+            /* The default values are *copied* from com.oracle.svm.core.genscavenge.HeapPolicy */
+            printOption("--native.Xmn<value>", "Sets the maximum size of the young generation, in bytes. Default: 256MB.");
+            printOption("--native.Xmx<value>", "Sets the maximum size of the heap, in bytes. Default: MaximumHeapSizePercent * physical memory.");
+            printOption("--native.Xms<value>", "Sets the minimum size of the heap, in bytes. Default: 2 * maximum young generation size.");
+            printOption("--native.Xss<value>", "Sets the size of each thread stack, in bytes. Default: OS-dependent.");
         }
 
         private boolean isBooleanOption(OptionDescriptor descriptor) {
@@ -1298,55 +1278,9 @@ public abstract class Launcher {
             return sb.substring(0, sb.length() - 1);
         }
 
-        void setGraalVMProperties(String languageId) {
-            assert GRAALVM_VERSION != null;
-            System.setProperty(GRAALVM_VERSION_PROPERTY, GRAALVM_VERSION);
-            System.setProperty(ALT_GRAALVM_VERSION_PROPERTY, GRAALVM_VERSION);
-            Path executable = getCurrentExecutablePath();
-            Path languageHome = getLanguageHome(executable);
-            Path graalVmHome = null;
-            if (languageHome != null) {
-                if (languageId != null) {
-                    System.setProperty(languageId + ".home", languageHome.toString());
-                }
-                graalVmHome = getGraalVMHomeFromLanguageHome(languageHome);
-            }
-            if (graalVmHome == null) {
-                graalVmHome = getGraalVMHome(executable);
-            }
-            if (graalVmHome != null) {
-                String home = graalVmHome.toString();
-                System.setProperty("graalvm.home", home);
-                System.setProperty("org.graalvm.home", home);
-                setLanguagesOrToolsHomes(graalVmHome, "languages");
-                setLanguagesOrToolsHomes(graalVmHome, "tools");
-            }
-        }
-
-        void setLanguagesOrToolsHomes(Path graalVmHome, String kind) {
-            Path directory = graalVmHome.resolve(Paths.get("jre", kind));
-            if (Files.isDirectory(directory)) {
-                try {
-                    for (Path p : Files.newDirectoryStream(directory)) {
-                        if (!Files.isDirectory(p)) {
-                            continue;
-                        }
-                        System.setProperty(p.getFileName().toString() + ".home", p.toString());
-                    }
-                } catch (IOException e) {
-                    e.printStackTrace();
-                }
-            }
-        }
-
         private Path getGraalVMBinaryPath(String binaryName) {
             String executableName = executableName(binaryName);
-            Path executablePath = getCurrentExecutablePath();
-            Path siblingBinary = executablePath.resolveSibling(executableName);
-            if (Files.exists(siblingBinary)) {
-                return siblingBinary;
-            }
-            Path graalVMHome = getGraalVMHome(executablePath);
+            Path graalVMHome = getGraalVMHome();
             if (graalVMHome == null) {
                 throw abort("Can not exec to GraalVM binary: could not find GraalVM home");
             }
@@ -1357,151 +1291,8 @@ public abstract class Launcher {
             return graalVMHome.resolve("jre").resolve("bin").resolve(executableName);
         }
 
-        /**
-         * @return the absolute resolved path to the current executable.
-         */
-        private Path getCurrentExecutablePath() {
-            return Paths.get((String) Compiler.command(new String[]{"com.oracle.svm.core.posix.GetExecutableName"}));
-        }
-
-        Path trimAbsolutePath(Path absolute, Path expectedRelative) {
-            Path p = expectedRelative;
-            Path result = absolute;
-            while (p != null) {
-                if (result == null) {
-                    return null;
-                }
-                if (!result.getFileName().equals(p.getFileName())) {
-                    System.err.println(String.format("WARNING: It seems that this launcher has been moved! Expected its path to end with %s but it was in %s", expectedRelative, absolute));
-                }
-                result = result.getParent();
-                p = p.getParent();
-            }
-            return result;
-        }
-
-        Path getLanguageHome(Path executable) {
-            if (LANGUAGE_HOME_RELATIVE_PATH == null) {
-                return null;
-            }
-            Path result = trimAbsolutePath(executable, LANGUAGE_HOME_RELATIVE_PATH);
-            if (result == null) {
-                abort(String.format("Error while getting the GraalVM home: getCurrentExecutablePath()=%s and LANGUAGE_HOME_RELATIVE_PATH=%s", executable, LANGUAGE_HOME_RELATIVE_PATH));
-            }
-            if (verbose) {
-                System.out.println(String.format("Resolving language home: executable=%s, LANGUAGE_HOME_RELATIVE_PATH=%s -> languageHome=%s", executable, LANGUAGE_HOME_RELATIVE_PATH, result));
-            }
-            return result;
-        }
-
-        Path getGraalVMHomeFromLanguageHome(Path languageHome) {
-            // jre/<languages_or_tools>/<comp_id>
-            Path languagesOrTools = languageHome.getParent();
-            String languagesOrToolsString = languagesOrTools.getFileName().toString();
-            if (!languagesOrToolsString.equals("languages") && !languagesOrToolsString.equals("tools")) {
-                return null;
-            }
-            Path jreOrJdk = languagesOrTools.getParent();
-            Path home;
-            if (jreOrJdk.getFileName().toString().equals("jre")) {
-                home = jreOrJdk.getParent();
-            } else {
-                home = jreOrJdk;
-            }
-            if (!isJreHome(home) && !isJdkHome(home)) {
-                if (verbose) {
-                    System.out.println(String.format("GraalVM home was found from language home but it's not a JRE/JDK home (ignoring it): %s", home));
-                }
-                return null;
-            }
-            if (verbose) {
-                System.out.println(String.format("Resolving GraalVM home from language home: languageHome=%s -> home=%s", languageHome, home));
-            }
-            return home;
-        }
-
         Path getGraalVMHome() {
-            if (FORCE_GRAAL_HOME != null) {
-                return FORCE_GRAAL_HOME;
-            }
-            String home = System.getProperty("org.graalvm.home");
-            if (home != null) {
-                return Paths.get(home);
-            }
-            return getGraalVMHome(getCurrentExecutablePath());
-        }
-
-        Path getGraalVMHome(Path executable) {
-            if (FORCE_GRAAL_HOME != null) {
-                return FORCE_GRAAL_HOME;
-            }
-            String systemPropertyHome = System.getProperty("org.graalvm.home");
-            if (systemPropertyHome != null) {
-                return Paths.get(systemPropertyHome);
-            }
-            assert isAOT();
-            Path languageHome = getLanguageHome(executable);
-            if (languageHome != null) {
-                Path graalVmHome = getGraalVMHomeFromLanguageHome(languageHome);
-                if (graalVmHome != null) {
-                    return graalVmHome;
-                }
-            }
-            if (GRAAL_HOME_RELATIVE_PATH != null) {
-                Path result = trimAbsolutePath(executable, GRAAL_HOME_RELATIVE_PATH);
-                if (result == null) {
-                    abort(String.format("Error while getting the GraalVM home: getCurrentExecutablePath()=%s and GRAAL_HOME_RELATIVE_PATH=%s", executable, GRAAL_HOME_RELATIVE_PATH));
-                }
-                if (verbose) {
-                    System.out.println(String.format("Resolving GraalVM home: executable=%s, GRAAL_HOME_RELATIVE_PATH=%s -> home=%s", executable, GRAAL_HOME_RELATIVE_PATH, result));
-                }
-                return result;
-            }
-            // Fallback, should probably be removed after a while
-            Path bin = executable.getParent();
-            assert bin.getFileName().toString().equals("bin");
-            Path jreOrJdk = bin.getParent();
-            Path home;
-            if (jreOrJdk != null && jreOrJdk.getFileName().toString().equals("jre")) {
-                home = jreOrJdk.getParent();
-            } else if (jreOrJdk != null) {
-                if (isJdkHome(jreOrJdk)) {
-                    home = jreOrJdk;
-                } else {
-                    // maybe we are in the language home?
-                    Path languages = jreOrJdk.getParent();
-                    if (languages != null && languages.getFileName().toString().equals("languages")) {
-                        Path jre = languages.getParent();
-                        if (jre != null && jre.getFileName().toString().equals("jre")) {
-                            home = jre.getParent();
-                        } else {
-                            home = null;
-                        }
-                    } else {
-                        home = null;
-                    }
-                }
-            } else {
-                home = null;
-            }
-            if (home != null && !isJreHome(home)) {
-                System.err.println(String.format("WARNING: %s was found as GraalVM home but it does not contain `bin/java`, ignoring it.", home));
-                return null;
-            }
-            if (verbose) {
-                System.out.println(String.format("Resolving GraalVM home with fallback: executable=%s -> home=%s", executable, home));
-            }
-            return home;
-        }
-
-        private boolean isJdkHome(Path path) {
-            Path javac = path.resolve(Paths.get("bin", "javac"));
-            return isJreHome(path) && Files.isRegularFile(javac) && Files.isExecutable(javac);
-        }
-
-        private boolean isJreHome(Path path) {
-            Path java = path.resolve(Paths.get("bin", "java"));
-            return Files.isRegularFile(java) && Files.isExecutable(java);
+            return Engine.findHome();
         }
 
         private void exec(Path executable, List<String> command) {

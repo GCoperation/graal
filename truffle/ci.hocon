@@ -16,7 +16,7 @@ benchCommon: ${linux-amd64} ${labsjdk8} {
   environment: {
     BENCH_RESULTS_FILE_PATH: "bench-results.json"
   },
-  targets: [weekly],
+  targets: [bench, weekly],
   timelimit: "1:00:00",
   setup : [
     ["cd", "./compiler"],
@@ -42,7 +42,6 @@ builds += [
     targets : [gate],
     name: "gate-truffle-javadoc"
   },
-  ${linux-amd64} ${linux-deploy} ${labsjdk8} ${maven-deploy-dry-run} ${truffleCommon} {name: "gate-truffle-maven-dry-run"}
   ${solaris-sparcv9} ${labsjdk8} ${gateLite} ${truffleWeekly} {
     name: "gate-truffle-solaris-lite-8"
   }

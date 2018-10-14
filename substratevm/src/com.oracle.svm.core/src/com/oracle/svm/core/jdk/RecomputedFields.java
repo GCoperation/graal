@@ -26,7 +26,6 @@ package com.oracle.svm.core.jdk;
 
 //Checkstyle: stop
 
-import static com.oracle.svm.core.annotate.RecomputeFieldValue.Kind.ArrayBaseOffset;
 import static com.oracle.svm.core.annotate.RecomputeFieldValue.Kind.AtomicFieldUpdaterOffset;
 import static com.oracle.svm.core.annotate.RecomputeFieldValue.Kind.FromAlias;
 import static com.oracle.svm.core.annotate.RecomputeFieldValue.Kind.Reset;
@@ -37,6 +36,7 @@ import java.lang.ref.ReferenceQueue;
 import java.lang.ref.WeakReference;
 import java.lang.reflect.Field;
 import java.lang.reflect.Modifier;
+import java.nio.MappedByteBuffer;
 import java.nio.charset.CharsetDecoder;
 import java.nio.charset.CoderResult;
 import java.util.Map;
@@ -87,13 +87,23 @@ final class Target_sun_util_calendar_ZoneInfoFile {
     private static Map<String, String> aliases = new java.util.HashMap<>();
 }
 
+/**
+ * We disallow direct byte buffers ({@link MappedByteBuffer} instances) in the image heap, with one
+ * exception: we allow 0-length non-file-based buffers. For example, Netty has a singleton empty
+ * buffer referenced from a static field, and a lot of Netty classes reference this buffer
+ * statically.
+ *
+ * Such buffers do actually have an address to memory that is allocated during image generation and
+ * therefore no longer available at run time. But since the capacity is 0, no memory can ever be
+ * accessed. We therefore allow this "dangling" address. However, we must never call free() for that
+ * address, so we remove the Cleaner registered for the buffer by resetting the field
+ * {@link #cleaner}.
+ */
 @TargetClass(className = "java.nio.DirectByteBuffer")
 @SuppressWarnings("unused")
 final class Target_java_nio_DirectByteBuffer {
-    @Alias //
-    @TargetElement(onlyWith = JDK8OrEarlier.class) //
-    @RecomputeFieldValue(kind = ArrayBaseOffset, declClass = byte[].class) //
-    static long arrayBaseOffset;
+    @Alias @RecomputeFieldValue(kind = Kind.Reset) //
+    Target_jdk_internal_ref_Cleaner cleaner;
 
     @Alias
     protected Target_java_nio_DirectByteBuffer(int cap, long addr, FileDescriptor fd, Runnable unmapper) {

@@ -2,11 +2,45 @@
 
 This changelog summarizes major changes between Truffle versions relevant to languages implementors building upon the Truffle framework. The main focus is on APIs exported by Truffle.
 
+## Version 1.0.0 RC8
+
+* Added `SuspendedEvent.setReturnValue` to change the return value of the currently executed source location.
+* Deprecated `FrameSlot#getIndex` without replacement.
+* Added `TruffleInstrument.Env.startServer()` to get a virtual message-based server provided via `MessageTransport` service.
+* Added `TruffleFile.relativize`, `TruffleFile.startsWith`, `TruffleFile.endsWith`, `TruffleFile.createLink`,  `TruffleFile.createSymbolicLink`, `TruffleFile.getOwner`, `TruffleFile.getGroup`, `TruffleFile.newDirectoryStream`, `TruffleFile.visit`, `TruffleFile.copy` methods.
+
+## Version 1.0.0 RC7
+* Truffle was relicensed from GPLv2 with CPE to Universal Permissive License (UPL).
+* Made all Truffle DSL annotations retention policy CLASS instead of RUNTIME. Reflecting DSL annotations at runtime is no longer possible. It is recommended to use `@Introspectable` instead. 
+
+* Removed deprecated FrameDescriptor#shallowCopy (deprecated since 1.0.0 RC3).
+* Removed deprecated FrameSlot#getFrameDescriptor (deprecated since 1.0.0 RC3).
+
 ## Version 1.0.0 RC6
 
+* Added support for byte based sources:
+	* Byte based sources may be constructed using a `ByteSequence` or from a `TruffleFile` or `URL`. Whether sources are interpreted as character or byte based sources depends on the specified language.
+	* `Source.hasBytes()` and `Source.hasCharacters()` may be used to find out whether a source is character or byte based.
+	* Added `Source.getBytes()` to access the contents of byte based sources. 
+	* `TruffleLanguage.Registration.mimeType` is now deprecated in favor of `TruffleLanguage.Registration.byteMimeTypes` and `TruffleLanguage.Registration.characterMimeTypes`. 
+	* Added `TruffleLanguage.Registration.defaultMimeType` to define a default MIME type. This is mandatory if a language specifies more than one MIME type.
+* `TruffleLanguage.Registration.id()` is now mandatory for all languages and reserved language ids will now be checked by the annotation processor.
+* Deprecated Source builders and aligned them with polyglot source builders.
+	* e.g. `Source.newBuilder("chars").name("name").language("language").build()` can be translated to `Source.newBuilder("language", "chars", "name").build()`
+	* This is a preparation step for removing Truffle source APIs in favor of polyglot Source APIs in a future release.
+* Deprecated `Source.getInputStream()`. Use `Source.getCharacters()` or `Source.getBytes()` instead.
+* Deprecated `TruffleLanguage.Env.newSourceBuilder(String, TruffleFile)`. Use  `Source.newBuilder(String, TruffleFile)` instead.
+* Added `Source.findLanguage` and `Source.findMimeType` to resolve languages and MIME types.
+* The method `Source.getMimeType()` might now return `null`. Source builders now support `null` values for `mimeType(String)`.
+* A `null` source name will no longer lead to an error but will be translated to `Unnamed`.
 * Added `TruffleFile.normalize` to allow explicit normalization of `TruffleFile` paths. `TruffleFile` is no longer normalized by default.
 * Added `Message#EXECUTE`, `Message#INVOKE`, `Message#NEW`.
 * Deprecated `Message#createExecute(int)`, `Message#createInvoke(int)`, `Message#createNew(int)` as the arity argument is no longer needed. Jackpot rules available (run `mx jackpot --apply`).
+* Removed APIs for deprecated packages: `com.oracle.truffle.api.vm`, `com.oracle.truffle.api.metadata`, `com.oracle.truffle.api.interop.java`
+* Removed deprecated class `TruffleTCK`.
+* Debugger API methods now throw [DebugException](http://www.graalvm.org/truffle/javadoc/com/oracle/truffle/api/debug/DebugException.html) on language failures.
+* Deprecated API methods that use `java.beans` package in [AllocationReporter](http://www.graalvm.org/truffle/javadoc/com/oracle/truffle/api/instrumentation/AllocationReporter.html) and [Debugger](http://www.graalvm.org/truffle/javadoc/com/oracle/truffle/api/debug/Debugger.html). New add/remove listener methods were introduced as a replacement.
+* [FrameDescriptor](http://www.graalvm.org/truffle/javadoc/com/oracle/truffle/api/frame/FrameDescriptor.html) no longer shares a lock with a RootNode.
 
 ## Version 1.0.0 RC5
 
@@ -28,7 +62,6 @@ using the [context policy](http://www.graalvm.org/truffle/javadoc/com/oracle/tru
   * The set returned by [FrameDescriptor#getIdentifiers](http://www.graalvm.org/truffle/javadoc/com/oracle/truffle/api/frame/FrameDescriptor.html#getIdentifiers--) no longer reflects future changes in the FrameDescriptor. This is an incompatible change.
 * Added [LanguageInfo#isInteractive](http://www.graalvm.org/truffle/javadoc/com/oracle/truffle/api/nodes/LanguageInfo.html#isInteractive--)
 * Added [DebugStackFrame#getLanguage](http://www.graalvm.org/truffle/javadoc/com/oracle/truffle/api/debug/DebugStackFrame.html#getLanguage--)
-* Added [isHostSymbol](http://www.graalvm.org/truffle/javadoc/com/oracle/truffle/api/TruffleLanguage.Env.html#isHostSymbol-java.lang.Object-) and [asHostSymbol](http://www.graalvm.org/truffle/javadoc/com/oracle/truffle/api/TruffleLanguage.Env.html#asHostSymbol-java.lang.Class-) to allow lookup of the host symbol from an existing class and not just class names.
 
 ## Version 1.0.0 RC3
 

@@ -325,7 +325,6 @@ public abstract class NativeBootImage extends AbstractBootImage {
     @Override
     @SuppressWarnings("try")
     public void build(DebugContext debug) {
-
         try (DebugContext.Scope buildScope = debug.scope("NativeBootImage.build")) {
 
             final CGlobalDataFeature cGlobals = CGlobalDataFeature.singleton();
@@ -333,6 +332,10 @@ public abstract class NativeBootImage extends AbstractBootImage {
             final int textSectionSize = codeCache.getCodeCacheSize();
             final int roConstantsSize = codeCache.getAlignedConstantsSize();
             final int cglobalsSize = ConfigurationValues.getObjectLayout().alignUp(cGlobals.getSize());
+
+            if (SubstrateOptions.SpawnIsolates.getValue()) {
+                heap.alignRelocatablePartition(objectFile.getPageSize());
+            }
 
             long roSectionSize = roConstantsSize;
             long rwSectionSize = cglobalsSize;
@@ -415,7 +418,7 @@ public abstract class NativeBootImage extends AbstractBootImage {
 
                 long firstRelocOffset = heap.getFirstRelocatablePointerOffsetInSection();
                 defineDataSymbol(Isolates.IMAGE_HEAP_RELOCATABLE_FIRST_RELOC_POINTER_NAME, heapSection, firstRelocOffset);
-                assert ((ByteBuffer) heapSectionBuffer.getBuffer().asReadOnlyBuffer().position(0)).getLong((int) firstRelocOffset) == 0;
+                assert castToByteBuffer(heapSectionBuffer).getLong((int) firstRelocOffset) == 0;
             } else {
                 assert heapSectionBuffer == null;
                 heap.writeHeap(debug, roDataBuffer, rwDataBuffer);
@@ -456,6 +459,15 @@ public abstract class NativeBootImage extends AbstractBootImage {
         // could prevent future optimizations.
         //
         // -Christian
+    }
+
+    /**
+     * Covariant return type overrides added by https://bugs.openjdk.java.net/browse/JDK-4774077
+     * make the cast below unnecessary as of JDK 9.
+     */
+    @SuppressWarnings("cast")
+    private static ByteBuffer castToByteBuffer(final RelocatableBuffer heapSectionBuffer) {
+        return (ByteBuffer) heapSectionBuffer.getBuffer().asReadOnlyBuffer().position(0);
     }
 
     private void markRelocationSitesFromMaps(RelocatableBuffer relocationMap, ProgbitsSectionImpl sectionImpl, Map<Object, NativeImageHeap.ObjectInfo> objectMap) {
@@ -508,7 +520,7 @@ public abstract class NativeBootImage extends AbstractBootImage {
         final int functionPointerRelocationSize = 8;
         assert info.getRelocationSize() == functionPointerRelocationSize : "Function relocation: " + info.getRelocationSize() + " should be " + functionPointerRelocationSize + " bytes.";
         // References to functions are via relocations to the symbol for the function.
-        HostedMethod method = ((MethodPointer) info.getTargetObject()).getMethod();
+        ResolvedJavaMethod method = ((MethodPointer) info.getTargetObject()).getMethod();
         // A reference to a method. Mark the relocation site using the symbol name.
         sectionImpl.markRelocationSite(offset, functionPointerRelocationSize, RelocationKind.DIRECT, localSymbolNameForMethod(method), false, 0L);
     }

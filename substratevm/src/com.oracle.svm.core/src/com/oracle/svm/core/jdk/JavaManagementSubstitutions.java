@@ -44,6 +44,7 @@ import javax.management.ObjectName;
 
 import org.graalvm.compiler.serviceprovider.GraalServices;
 import org.graalvm.nativeimage.Feature;
+import org.graalvm.nativeimage.ProcessProperties;
 import org.graalvm.nativeimage.ImageSingletons;
 
 import com.oracle.svm.core.JavaMainWrapper.JavaMainSupport;
@@ -170,12 +171,13 @@ final class SubstrateRuntimeMXBean implements RuntimeMXBean {
         throw VMError.unsupportedFeature(MSG);
     }
 
+    @SuppressWarnings("deprecation")
     @Override
     public String getName() {
         long id;
         String hostName;
         try {
-            id = (Integer) Compiler.command(new Object[]{"com.oracle.svm.core.posix.PosixUtils.getpid()int"});
+            id = ProcessProperties.getProcessID();
         } catch (Throwable t) {
             id = GraalServices.getGlobalTimeStamp();
         }

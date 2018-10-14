@@ -39,11 +39,11 @@ import org.graalvm.compiler.debug.DebugContext;
 import org.graalvm.compiler.debug.Indent;
 import org.graalvm.nativeimage.ImageSingletons;
 import org.graalvm.nativeimage.c.function.CodePointer;
+import org.graalvm.nativeimage.c.type.CTypeConversion;
 import org.graalvm.word.Pointer;
 import org.graalvm.word.UnsignedWord;
 import org.graalvm.word.WordFactory;
 
-import com.oracle.svm.core.SubstrateUtil;
 import com.oracle.svm.core.annotate.Uninterruptible;
 import com.oracle.svm.core.code.CodeInfoEncoder;
 import com.oracle.svm.core.code.CodeInfoTable;
@@ -294,7 +294,7 @@ public class InstalledCodeBuilder {
         }
 
         /* Write primitive constants to the buffer, record object constants with offsets */
-        ByteBuffer constantsBuffer = SubstrateUtil.wrapAsByteBuffer(code.add(constantsOffset), compilation.getDataSection().getSectionSize());
+        ByteBuffer constantsBuffer = CTypeConversion.asByteBuffer(code.add(constantsOffset), compilation.getDataSection().getSectionSize());
         compilation.getDataSection().buildDataSection(constantsBuffer, (position, constant) -> {
             objectConstants.add(constantsOffset + position, (SubstrateObjectConstant) constant);
         });
@@ -489,7 +489,7 @@ public class InstalledCodeBuilder {
         return callTargetStart;
     }
 
-    protected Pointer allocateOSMemory(final UnsignedWord size, final boolean executable) {
+    private static Pointer allocateOSMemory(final UnsignedWord size, final boolean executable) {
         final Log trace = Log.noopLog();
         trace.string("[SubstrateInstalledCode.allocateAlignedMemory:");
         trace.string("  size: ").unsigned(size);
@@ -497,10 +497,13 @@ public class InstalledCodeBuilder {
         final Pointer result = CommittedMemoryProvider.get().allocate(size, CommittedMemoryProvider.UNALIGNED, executable);
         trace.string("  returns: ").hex(result);
         trace.string("]").newline();
+        if (result.isNull()) {
+            throw new OutOfMemoryError();
+        }
         return result;
     }
 
-    protected void freeOSMemory(final Pointer start, final UnsignedWord size) {
+    private static void freeOSMemory(final Pointer start, final UnsignedWord size) {
         final Log trace = Log.noopLog();
         trace.string("[SubstrateInstalledCode.freeOSMemory:");
         trace.string("  start: ").hex(start);

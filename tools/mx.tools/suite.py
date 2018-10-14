@@ -1,7 +1,23 @@
 suite = {
-    "mxversion": "5.175.2",
+    "mxversion": "5.176.0",
     "name": "tools",
     "defaultLicense" : "GPLv2-CPE",
+
+    "groupId" : "org.graalvm.tools",
+    "version": "1.0.0-rc8",
+    "release" : False,
+    "url" : "http://openjdk.java.net/projects/graal",
+    "developer" : {
+      "name" : "Truffle and Graal developers",
+      "email" : "graal-dev@openjdk.java.net",
+      "organization" : "Graal",
+      "organizationUrl" : "http://openjdk.java.net/projects/graal",
+    },
+    "scm" : {
+        "url" : "https://github.com/oracle/graal",
+        "read" : "https://github.com/oracle/graal.git",
+        "write" : "git@github.com:oracle/graal.git",
+    },
 
     "imports": {
         "suites": [
@@ -25,16 +41,17 @@ suite = {
                 "NanoHTTPD",
                 "NanoHTTPD-WebSocket",
                 "TruffleJSON",
+                "Java-WebSocket",
             ],
             "exports" : [
               "<package-info>", # exports all packages containing package-info.java
-              "com.oracle.truffle.tools.chromeinspector.instrument to com.oracle.truffle.truffle_api"
+              "com.oracle.truffle.tools.chromeinspector.instrument to org.graalvm.truffle"
             ],
-            "javaCompliance" : "1.8",
-            "checkstyle" : "com.oracle.truffle.api",
+            "javaCompliance" : "8+",
+            "checkstyleVersion" : "8.8",
+            "checkstyle" : "com.oracle.truffle.tools.chromeinspector",
             "annotationProcessors" : ["truffle:TRUFFLE_DSL_PROCESSOR"],
             "workingSets" : "Tools",
-            "license" : "GPLv2-CPE",
         },
         "com.oracle.truffle.tools.chromeinspector.test" : {
             "subDir" : "src",
@@ -45,24 +62,27 @@ suite = {
                 "truffle:TRUFFLE_SL",
                 "mx:JUNIT",
             ],
-            "javaCompliance" : "1.8",
-            "checkstyle" : "com.oracle.truffle.tools.chromeinspector.test",
+            "javaCompliance" : "8+",
+            "checkstyle" : "com.oracle.truffle.tools.chromeinspector",
             "checkstyleVersion" : "8.8",
             "annotationProcessors" : ["truffle:TRUFFLE_DSL_PROCESSOR"],
             "workingSets" : "Tools",
-            "license" : "GPLv2-CPE",
         },
         "com.oracle.truffle.tools.profiler" : {
             "subDir" : "src",
             "sourceDirs" : ["src"],
-            "dependencies" : ["truffle:TRUFFLE_API"],
+            "dependencies" : [
+                "truffle:TRUFFLE_API",
+                "TruffleJSON",
+                ],
             "exports" : [
               "<package-info>", # exports all packages containing package-info.java
-              "com.oracle.truffle.tools.profiler.impl to com.oracle.truffle.truffle_api",
+              "com.oracle.truffle.tools.profiler.impl to org.graalvm.truffle",
             ],
             "annotationProcessors" : ["truffle:TRUFFLE_DSL_PROCESSOR"],
-            "checkstyle" : "com.oracle.truffle.api",
-            "javaCompliance" : "1.8",
+            "checkstyleVersion" : "8.8",
+            "checkstyle" : "com.oracle.truffle.tools.chromeinspector",
+            "javaCompliance" : "8+",
             "workingSets" : "Tools",
         },
         "com.oracle.truffle.tools.profiler.test" : {
@@ -74,8 +94,9 @@ suite = {
                 "mx:JUNIT"
             ],
             "annotationProcessors" : ["truffle:TRUFFLE_DSL_PROCESSOR"],
-            "checkstyle" : "com.oracle.truffle.api",
-            "javaCompliance" : "1.8",
+            "checkstyleVersion" : "8.8",
+            "checkstyle" : "com.oracle.truffle.tools.chromeinspector",
+            "javaCompliance" : "8+",
             "workingSets" : "Tools",
         },
     },
@@ -111,22 +132,34 @@ suite = {
           ],
           "sha1" : "8819cea8bfe22c9c63f55465e296b3855ea41786",
         },
+        "Java-WebSocket" : {
+            "path" : "lib/Java-WebSocket-1.3.9.jar",
+            "urls" : [
+                "https://search.maven.org/remotecontent?filepath=org/java-websocket/Java-WebSocket/1.3.9/Java-WebSocket-1.3.9.jar",
+            ],
+            "sha1" : "e6e60889b7211a80b21052a249bd7e0f88f79fee",
+            "maven" : {
+                "groupId" : "org.java-websocket",
+                "artifactId" : "Java-WebSocket",
+                "version" : "1.3.9",
+            }
+        },
         "VISUALVM_COMMON" : {
-            "urls" : ["https://lafo.ssw.uni-linz.ac.at/pub/graal-external-deps/visualvm-592.tar.gz"],
-            "sha1" : "2b5fee653a160f6a3a863527cd68e49b8566d978",
+            "urls" : ["https://lafo.ssw.uni-linz.ac.at/pub/graal-external-deps/visualvm-606.tar.gz"],
+            "sha1" : "4cb0f27e677582e760fdce1d71900048cb30c3e8",
         },
         "VISUALVM_PLATFORM_SPECIFIC" : {
             "os_arch" : {
                 "linux" : {
                     "amd64" : {
-                        "urls" : ["https://lafo.ssw.uni-linz.ac.at/pub/graal-external-deps/visualvm-592-linux-amd64.tar.gz"],
-                        "sha1" : "725aeb7cdf1ed8c5272b2b4efd57101102676676",
+                        "urls" : ["https://lafo.ssw.uni-linz.ac.at/pub/graal-external-deps/visualvm-606-linux-amd64.tar.gz"],
+                        "sha1" : "cbd7d1b4378f024a9fc5a71ac79ed90ad5f8a173",
                     }
                 },
                 "darwin" : {
                     "amd64" : {
-                        "urls" : ["https://lafo.ssw.uni-linz.ac.at/pub/graal-external-deps/visualvm-592-macosx-x86_64.tar.gz"],
-                        "sha1" : "8ae21feaa9960e583d8868b63ea1bc31a9ccf399",
+                        "urls" : ["https://lafo.ssw.uni-linz.ac.at/pub/graal-external-deps/visualvm-606-macosx-x86_64.tar.gz"],
+                        "sha1" : "6e5a902272f1d10db9b16407fe1f6faf40ddd90b",
                     }
                 },
             }
@@ -142,6 +175,10 @@ suite = {
                 "truffle:TRUFFLE_API",
                 "TRUFFLE_PROFILER",
             ],
+            "maven" : {
+              "artifactId" : "chromeinspector",
+            },
+            "description" : "The bridge between truffle tools and the chrome inspector.",
         },
         "CHROMEINSPECTOR_TEST": {
             "dependencies": ["com.oracle.truffle.tools.chromeinspector.test"],
@@ -173,6 +210,9 @@ suite = {
             "distDependencies" : [
                 "truffle:TRUFFLE_API",
             ],
+            "maven" : {
+              "artifactId" : "profiler",
+            },
             "javadocType" : "api",
             "description" : "The truffle profiler, supporting CPU sampling and tracing. Memory tracing support is experimental"
         },

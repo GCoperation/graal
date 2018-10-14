@@ -1,36 +1,45 @@
 /*
- * Copyright (c) 2017, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2017, 2018, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
- * This code is free software; you can redistribute it and/or modify it
- * under the terms of the GNU General Public License version 2 only, as
- * published by the Free Software Foundation.  Oracle designates this
- * particular file as subject to the "Classpath" exception as provided
- * by Oracle in the LICENSE file that accompanied this code.
+ * The Universal Permissive License (UPL), Version 1.0
  *
- * This code is distributed in the hope that it will be useful, but WITHOUT
- * ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
- * FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License
- * version 2 for more details (a copy is included in the LICENSE file that
- * accompanied this code).
+ * Subject to the condition set forth below, permission is hereby granted to any
+ * person obtaining a copy of this software, associated documentation and/or
+ * data (collectively the "Software"), free of charge and under any and all
+ * copyright rights in the Software, and any and all patent rights owned or
+ * freely licensable by each licensor hereunder covering either (i) the
+ * unmodified Software as contributed to or provided by such licensor, or (ii)
+ * the Larger Works (as defined below), to deal in both
  *
- * You should have received a copy of the GNU General Public License version
- * 2 along with this work; if not, write to the Free Software Foundation,
- * Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301 USA.
+ * (a) the Software, and
  *
- * Please contact Oracle, 500 Oracle Parkway, Redwood Shores, CA 94065 USA
- * or visit www.oracle.com if you need additional information or have any
- * questions.
+ * (b) any piece of software and/or hardware listed in the lrgrwrks.txt file if
+ * one is included with the Software each a "Larger Work" to which the Software
+ * is contributed by such licensors),
+ *
+ * without restriction, including without limitation the rights to copy, create
+ * derivative works of, display, perform, and distribute the Software and make,
+ * use, sell, offer for sale, import, export, have made, and have sold the
+ * Software and the Larger Work(s), and to sublicense the foregoing rights on
+ * either these or other terms.
+ *
+ * This license is subject to the following condition:
+ *
+ * The above copyright notice and either this complete permission notice or at a
+ * minimum a reference to the UPL must be included in all copies or substantial
+ * portions of the Software.
+ *
+ * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+ * IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+ * FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+ * AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+ * LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+ * OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+ * SOFTWARE.
  */
 package com.oracle.truffle.api.test.polyglot;
 
-import com.oracle.truffle.api.CallTarget;
-import com.oracle.truffle.api.Truffle;
-import com.oracle.truffle.api.TruffleFile;
-import com.oracle.truffle.api.TruffleLanguage;
-import com.oracle.truffle.api.TruffleLanguage.Env;
-import com.oracle.truffle.api.frame.VirtualFrame;
-import com.oracle.truffle.api.nodes.RootNode;
 import java.io.BufferedReader;
 import java.io.BufferedWriter;
 import java.io.Closeable;
@@ -68,23 +77,42 @@ import java.util.Optional;
 import java.util.Set;
 import java.util.function.Consumer;
 import java.util.function.Predicate;
+
 import org.graalvm.polyglot.Context;
-import org.graalvm.polyglot.Engine;
+import org.graalvm.polyglot.io.FileSystem;
 import org.junit.After;
 import org.junit.AfterClass;
 import org.junit.Assert;
+import org.junit.Before;
 import org.junit.Test;
 import org.junit.runner.RunWith;
 import org.junit.runners.Parameterized;
-import org.graalvm.polyglot.io.FileSystem;
-import org.junit.Before;
+
+import com.oracle.truffle.api.CallTarget;
+import com.oracle.truffle.api.Truffle;
+import com.oracle.truffle.api.TruffleFile;
+import com.oracle.truffle.api.TruffleLanguage;
+import com.oracle.truffle.api.TruffleLanguage.Env;
+import com.oracle.truffle.api.frame.VirtualFrame;
+import com.oracle.truffle.api.impl.Accessor;
+import com.oracle.truffle.api.nodes.RootNode;
+import java.nio.file.FileVisitOption;
+import java.nio.file.FileVisitResult;
+import java.nio.file.FileVisitor;
+import java.nio.file.attribute.BasicFileAttributes;
+import java.nio.file.attribute.GroupPrincipal;
+import java.nio.file.attribute.UserPrincipal;
+import java.util.HashSet;
 
 @RunWith(Parameterized.class)
 public class VirtualizedFileSystemTest {
 
     private static final String LANGAUGE_ID = "virtualised-fs-lang";
     private static final String FOLDER_EXISTING = "folder";
+    private static final String FOLDER_EXISTING_INNER1 = "folder1";
+    private static final String FOLDER_EXISTING_INNER2 = "folder2";
     private static final String FILE_EXISTING = "existing_file.txt";
+    private static final String FILE_EXISTING2 = "existing_file2.txt";
     private static final String FILE_EXISTING_CONTENT = "Existing File Content";
     private static final String FILE_EXISTING_WRITE_MMAP = "write_mmap.txt";
     private static final String FILE_EXISTING_DELETE = "delete.txt";
@@ -94,6 +122,11 @@ public class VirtualizedFileSystemTest {
     private static final String FILE_NEW_CREATE_DIR = "new_dir";
     private static final String FILE_NEW_CREATE_FILE = "new_file.txt";
     private static final String FILE_NEW_RENAME = "new_rename.txt";
+    private static final String FILE_NEW_LINK = "new_link.txt";
+    private static final String FILE_NEW_SYMLINK = "new_symlink.txt";
+    private static final String FILE_NEW_COPY = "new_copy.txt";
+    private static final String FOLDER_NEW_COPY = "folder_copy";
+
     private static Collection<Configuration> cfgs;
     private static Consumer<Env> languageAction;
 
@@ -109,7 +142,7 @@ public class VirtualizedFileSystemTest {
                         Files.createTempDirectory(VirtualizedFileSystemTest.class.getSimpleName()),
                         fullIO);
         Context ctx = Context.newBuilder(LANGAUGE_ID).allowIO(true).build();
-        result.add(new Configuration("Full IO", ctx, accessibleDir, cwd, fullIO, false, true, true, true));
+        result.add(new Configuration("Full IO", ctx, accessibleDir, cwd, fullIO, true, true, true, true));
         // No IO
         ctx = Context.newBuilder(LANGAUGE_ID).allowIO(false).build();
         Path privateDir = createContent(
@@ -182,10 +215,6 @@ public class VirtualizedFileSystemTest {
     public void setUp() {
         Optional.ofNullable(this.cfg.getBeforeAction()).ifPresent(Runnable::run);
         resetLanguageHomes();
-        // JUnit mixes test executions from different classes. There are still tests using the
-        // deprecated PolyglotEngine. For tests executed by Parametrized runner
-        // creating Context as a test parameter we need to ensure that correct SPI is used.
-        Engine.create().close();
     }
 
     @After
@@ -200,7 +229,7 @@ public class VirtualizedFileSystemTest {
         final boolean canRead = cfg.canRead();
         languageAction = (Env env) -> {
             final Path folderExisting = path.resolve(FOLDER_EXISTING);
-            final TruffleFile file = cfg.needsURI() ? env.getTruffleFile(folderExisting.toUri()) : env.getTruffleFile(folderExisting.toString());
+            final TruffleFile file = env.getTruffleFile(folderExisting.toString());
             try {
                 final String expected = path.resolve(FOLDER_EXISTING).resolve(FILE_EXISTING).toString();
                 final Collection<? extends TruffleFile> children = file.list();
@@ -223,7 +252,7 @@ public class VirtualizedFileSystemTest {
         final boolean canRead = cfg.canRead();
         languageAction = (Env env) -> {
             final Path folderExisting = path.resolve(FOLDER_EXISTING);
-            TruffleFile file = cfg.needsURI() ? env.getTruffleFile(folderExisting.toUri()) : env.getTruffleFile(folderExisting.toString());
+            TruffleFile file = env.getTruffleFile(folderExisting.toString());
             file = file.resolve("lib/../.");
             try {
                 final String expected = path.resolve(FOLDER_EXISTING).resolve("lib/../.").resolve(FILE_EXISTING).toString();
@@ -246,7 +275,7 @@ public class VirtualizedFileSystemTest {
         final Path path = cfg.getPath();
         final boolean canRead = cfg.canRead();
         languageAction = (Env env) -> {
-            final TruffleFile root = cfg.needsURI() ? env.getTruffleFile(path.toUri()) : env.getTruffleFile(path.toString());
+            final TruffleFile root = env.getTruffleFile(path.toString());
             try {
                 final TruffleFile file = root.resolve(FOLDER_EXISTING).resolve(FILE_EXISTING);
                 final String content = new String(file.readAllBytes(), StandardCharsets.UTF_8);
@@ -267,7 +296,7 @@ public class VirtualizedFileSystemTest {
         final Path path = cfg.getPath();
         final boolean canRead = cfg.canRead();
         languageAction = (Env env) -> {
-            final TruffleFile root = cfg.needsURI() ? env.getTruffleFile(path.toUri()) : env.getTruffleFile(path.toString());
+            final TruffleFile root = env.getTruffleFile(path.toString());
             try {
                 final TruffleFile file = root.resolve(FOLDER_EXISTING).resolve(FILE_EXISTING);
                 final StringBuilder content = new StringBuilder();
@@ -300,7 +329,7 @@ public class VirtualizedFileSystemTest {
         final boolean canRead = cfg.canRead();
         final boolean canWrite = cfg.canWrite();
         languageAction = (Env env) -> {
-            final TruffleFile root = cfg.needsURI() ? env.getTruffleFile(path.toUri()) : env.getTruffleFile(path.toString());
+            final TruffleFile root = env.getTruffleFile(path.toString());
             try {
                 final String expectedContent = "0123456789";
                 final TruffleFile file = root.resolve(FILE_NEW_WRITE_CHANNEL);
@@ -328,7 +357,7 @@ public class VirtualizedFileSystemTest {
         final boolean canRead = cfg.canRead();
         final boolean canWrite = cfg.canWrite();
         languageAction = (Env env) -> {
-            final TruffleFile root = cfg.needsURI() ? env.getTruffleFile(path.toUri()) : env.getTruffleFile(path.toString());
+            final TruffleFile root = env.getTruffleFile(path.toString());
             try {
                 final String expectedContent = "0123456789";
                 final TruffleFile file = root.resolve(FILE_NEW_WRITE_STREAM);
@@ -355,7 +384,7 @@ public class VirtualizedFileSystemTest {
         final boolean canRead = cfg.canRead();
         final boolean canWrite = cfg.canWrite();
         languageAction = (Env env) -> {
-            final TruffleFile root = cfg.needsURI() ? env.getTruffleFile(path.toUri()) : env.getTruffleFile(path.toString());
+            final TruffleFile root = env.getTruffleFile(path.toString());
             try {
                 final TruffleFile toCreate = root.resolve(FILE_NEW_CREATE_DIR);
                 toCreate.createDirectories();
@@ -379,7 +408,7 @@ public class VirtualizedFileSystemTest {
         final boolean canRead = cfg.canRead();
         final boolean canWrite = cfg.canWrite();
         languageAction = (Env env) -> {
-            final TruffleFile root = cfg.needsURI() ? env.getTruffleFile(path.toUri()) : env.getTruffleFile(path.toString());
+            final TruffleFile root = env.getTruffleFile(path.toString());
             try {
                 final TruffleFile toCreate = root.resolve(FILE_NEW_CREATE_FILE);
                 toCreate.createFile();
@@ -402,7 +431,7 @@ public class VirtualizedFileSystemTest {
         final Path path = cfg.getPath();
         final boolean canWrite = cfg.canWrite();
         languageAction = (Env env) -> {
-            final TruffleFile root = cfg.needsURI() ? env.getTruffleFile(path.toUri()) : env.getTruffleFile(path.toString());
+            final TruffleFile root = env.getTruffleFile(path.toString());
             try {
                 final TruffleFile toCreate = root.resolve(FILE_EXISTING_DELETE);
                 toCreate.delete();
@@ -422,7 +451,7 @@ public class VirtualizedFileSystemTest {
         final Path path = cfg.getPath();
         final boolean canRead = cfg.canRead();
         languageAction = (Env env) -> {
-            final TruffleFile root = cfg.needsURI() ? env.getTruffleFile(path.toUri()) : env.getTruffleFile(path.toString());
+            final TruffleFile root = env.getTruffleFile(path.toString());
             try {
                 final TruffleFile toCreate = root.resolve(FOLDER_EXISTING).resolve(FILE_EXISTING);
                 final boolean exists = toCreate.exists();
@@ -439,10 +468,6 @@ public class VirtualizedFileSystemTest {
     public void testGetAbsoluteFile() {
         final Context ctx = cfg.getContext();
         final boolean allowsUserDir = cfg.allowsUserDir();
-        if (cfg.needsURI()) {
-            // Nothing to test for URI path
-            return;
-        }
         languageAction = (Env env) -> {
             final TruffleFile file = env.getTruffleFile(FOLDER_EXISTING).resolve(FILE_EXISTING);
             try {
@@ -462,7 +487,7 @@ public class VirtualizedFileSystemTest {
         final Path path = cfg.getPath();
         final boolean canRead = cfg.canRead();
         languageAction = (Env env) -> {
-            final TruffleFile root = cfg.needsURI() ? env.getTruffleFile(path.toUri()) : env.getTruffleFile(path.toString());
+            final TruffleFile root = env.getTruffleFile(path.toString());
             try {
                 final TruffleFile canonical = root.resolve(FOLDER_EXISTING).resolve(FILE_EXISTING).getCanonicalFile();
                 Assert.assertTrue(cfg.formatErrorMessage("Expected SecurityException"), canRead);
@@ -482,7 +507,7 @@ public class VirtualizedFileSystemTest {
         final Path path = cfg.getPath();
         final boolean canRead = cfg.canRead();
         languageAction = (Env env) -> {
-            final TruffleFile root = cfg.needsURI() ? env.getTruffleFile(path.toUri()) : env.getTruffleFile(path.toString());
+            final TruffleFile root = env.getTruffleFile(path.toString());
             try {
                 final TruffleFile file = root.resolve(FOLDER_EXISTING).resolve(FILE_EXISTING);
                 final FileTime lastModifiedTime = file.getLastModifiedTime();
@@ -503,7 +528,7 @@ public class VirtualizedFileSystemTest {
         final Path path = cfg.getPath();
         final boolean canRead = cfg.canRead();
         languageAction = (Env env) -> {
-            final TruffleFile root = cfg.needsURI() ? env.getTruffleFile(path.toUri()) : env.getTruffleFile(path.toString());
+            final TruffleFile root = env.getTruffleFile(path.toString());
             try {
                 final TruffleFile file = root.resolve(FOLDER_EXISTING).resolve(FILE_EXISTING);
                 final boolean isDir = file.isDirectory();
@@ -522,7 +547,7 @@ public class VirtualizedFileSystemTest {
         final Path path = cfg.getPath();
         final boolean canRead = cfg.canRead();
         languageAction = (Env env) -> {
-            final TruffleFile root = cfg.needsURI() ? env.getTruffleFile(path.toUri()) : env.getTruffleFile(path.toString());
+            final TruffleFile root = env.getTruffleFile(path.toString());
             try {
                 final TruffleFile file = root.resolve(FOLDER_EXISTING).resolve(FILE_EXISTING);
                 final boolean isFile = file.isRegularFile();
@@ -541,7 +566,7 @@ public class VirtualizedFileSystemTest {
         final Path path = cfg.getPath();
         final boolean canRead = cfg.canRead();
         languageAction = (Env env) -> {
-            final TruffleFile root = cfg.needsURI() ? env.getTruffleFile(path.toUri()) : env.getTruffleFile(path.toString());
+            final TruffleFile root = env.getTruffleFile(path.toString());
             try {
                 final TruffleFile file = root.resolve(FOLDER_EXISTING).resolve(FILE_EXISTING);
                 final boolean readable = file.isReadable();
@@ -560,7 +585,7 @@ public class VirtualizedFileSystemTest {
         final Path path = cfg.getPath();
         final boolean canRead = cfg.canRead();
         languageAction = (Env env) -> {
-            final TruffleFile root = cfg.needsURI() ? env.getTruffleFile(path.toUri()) : env.getTruffleFile(path.toString());
+            final TruffleFile root = env.getTruffleFile(path.toString());
             try {
                 final TruffleFile file = root.resolve(FOLDER_EXISTING).resolve(FILE_EXISTING);
                 final boolean writable = file.isWritable();
@@ -579,7 +604,7 @@ public class VirtualizedFileSystemTest {
         final Path path = cfg.getPath();
         final boolean canRead = cfg.canRead();
         languageAction = (Env env) -> {
-            final TruffleFile root = cfg.needsURI() ? env.getTruffleFile(path.toUri()) : env.getTruffleFile(path.toString());
+            final TruffleFile root = env.getTruffleFile(path.toString());
             try {
                 final TruffleFile file = root.resolve(FOLDER_EXISTING).resolve(FILE_EXISTING);
                 final boolean executable = file.isExecutable();
@@ -599,7 +624,7 @@ public class VirtualizedFileSystemTest {
         final boolean canRead = cfg.canRead();
         final boolean canWrite = cfg.canWrite();
         languageAction = (Env env) -> {
-            final TruffleFile root = cfg.needsURI() ? env.getTruffleFile(path.toUri()) : env.getTruffleFile(path.toString());
+            final TruffleFile root = env.getTruffleFile(path.toString());
             try {
                 final TruffleFile file = root.resolve(FILE_EXISTING_RENAME);
                 final TruffleFile target = root.resolve(FILE_NEW_RENAME);
@@ -627,7 +652,7 @@ public class VirtualizedFileSystemTest {
         final Path path = cfg.getPath();
         final boolean canRead = cfg.canRead();
         languageAction = (Env env) -> {
-            final TruffleFile root = cfg.needsURI() ? env.getTruffleFile(path.toUri()) : env.getTruffleFile(path.toString());
+            final TruffleFile root = env.getTruffleFile(path.toString());
             try {
                 final TruffleFile file = root.resolve(FOLDER_EXISTING).resolve(FILE_EXISTING);
                 final long size = file.size();
@@ -647,10 +672,6 @@ public class VirtualizedFileSystemTest {
         final Context ctx = cfg.getContext();
         final Path userDir = cfg.getUserDir();
         final boolean allowsUserDir = cfg.allowsUserDir();
-        if (cfg.needsURI()) {
-            // Nothing to test for URI path
-            return;
-        }
         languageAction = (Env env) -> {
             final TruffleFile file = env.getTruffleFile(FOLDER_EXISTING).resolve(FILE_EXISTING);
             try {
@@ -689,13 +710,467 @@ public class VirtualizedFileSystemTest {
         ctx.eval(LANGAUGE_ID, "");
     }
 
+    @Test
+    public void testRelativize() {
+        Context ctx = cfg.getContext();
+        languageAction = (Env env) -> {
+            TruffleFile parent = env.getTruffleFile("/test/parent");
+            TruffleFile child = env.getTruffleFile("/test/parent/child");
+            TruffleFile relative = parent.relativize(child);
+            Assert.assertEquals("child", relative.getPath());
+            Assert.assertEquals(child, parent.resolve(relative.getPath()));
+            child = env.getTruffleFile("/test/parent/child/inner");
+            relative = parent.relativize(child);
+            Assert.assertEquals("child/inner", relative.getPath());
+            Assert.assertEquals(child, parent.resolve(relative.getPath()));
+            TruffleFile sibling = env.getTruffleFile("/test/sibling");
+            relative = parent.relativize(sibling);
+            Assert.assertEquals("../sibling", relative.getPath());
+            Assert.assertEquals(sibling.normalize(), parent.resolve(relative.getPath()).normalize());
+        };
+        ctx.eval(LANGAUGE_ID, "");
+    }
+
+    @Test
+    public void testStartsWith() {
+        Context ctx = cfg.getContext();
+        languageAction = (Env env) -> {
+            TruffleFile testAbsolute = env.getTruffleFile("/test");
+            TruffleFile testParentAbsolute = env.getTruffleFile("/test/parent");
+            TruffleFile testSiblingAbolute = env.getTruffleFile("/test/sibling");
+            TruffleFile testParentSiblingAbsolute = env.getTruffleFile("/test/parent/sibling");
+            TruffleFile teAbsolute = env.getTruffleFile("/te");
+            TruffleFile testParentChildAbsolute = env.getTruffleFile("/test/parent/child");
+            TruffleFile testRelative = env.getTruffleFile("test");
+            TruffleFile testParentRelative = env.getTruffleFile("test/parent");
+            TruffleFile testSiblingRelative = env.getTruffleFile("test/sibling");
+            TruffleFile testParentSiblingRelative = env.getTruffleFile("test/parent/sibling");
+            TruffleFile teRelative = env.getTruffleFile("te");
+            TruffleFile testParentChildRelative = env.getTruffleFile("test/parent/child");
+            Assert.assertTrue(testParentChildAbsolute.startsWith(testAbsolute));
+            Assert.assertTrue(testParentChildAbsolute.startsWith(testAbsolute.getPath()));
+            Assert.assertTrue(testParentChildAbsolute.startsWith(testParentAbsolute));
+            Assert.assertTrue(testParentChildAbsolute.startsWith(testParentAbsolute.getPath()));
+            Assert.assertTrue(testParentChildAbsolute.startsWith(testParentChildAbsolute));
+            Assert.assertTrue(testParentChildAbsolute.startsWith(testParentChildAbsolute.getPath()));
+            Assert.assertFalse(testParentChildAbsolute.startsWith(testSiblingAbolute));
+            Assert.assertFalse(testParentChildAbsolute.startsWith(testSiblingAbolute.getPath()));
+            Assert.assertFalse(testParentChildAbsolute.startsWith(testParentSiblingAbsolute));
+            Assert.assertFalse(testParentChildAbsolute.startsWith(testParentSiblingAbsolute.getPath()));
+            Assert.assertFalse(testParentChildAbsolute.startsWith(teAbsolute));
+            Assert.assertFalse(testParentChildAbsolute.startsWith(teAbsolute.getPath()));
+            Assert.assertTrue(testParentChildRelative.startsWith(testRelative));
+            Assert.assertTrue(testParentChildRelative.startsWith(testRelative.getPath()));
+            Assert.assertTrue(testParentChildRelative.startsWith(testParentRelative));
+            Assert.assertTrue(testParentChildRelative.startsWith(testParentRelative.getPath()));
+            Assert.assertTrue(testParentChildRelative.startsWith(testParentChildRelative));
+            Assert.assertTrue(testParentChildRelative.startsWith(testParentChildRelative.getPath()));
+            Assert.assertFalse(testParentChildRelative.startsWith(testSiblingRelative));
+            Assert.assertFalse(testParentChildRelative.startsWith(testSiblingRelative.getPath()));
+            Assert.assertFalse(testParentChildRelative.startsWith(testParentSiblingRelative));
+            Assert.assertFalse(testParentChildRelative.startsWith(testParentSiblingRelative.getPath()));
+            Assert.assertFalse(testParentChildRelative.startsWith(teRelative));
+            Assert.assertFalse(testParentChildRelative.startsWith(teRelative.getPath()));
+            Assert.assertFalse(testParentChildAbsolute.startsWith(testRelative));
+            Assert.assertFalse(testParentChildAbsolute.startsWith(testRelative.getPath()));
+            Assert.assertFalse(testParentChildAbsolute.startsWith(testParentRelative));
+            Assert.assertFalse(testParentChildAbsolute.startsWith(testParentRelative.getPath()));
+            Assert.assertFalse(testParentChildAbsolute.startsWith(testParentChildRelative));
+            Assert.assertFalse(testParentChildAbsolute.startsWith(testParentChildRelative.getPath()));
+            Assert.assertFalse(testParentChildRelative.startsWith(testAbsolute));
+            Assert.assertFalse(testParentChildRelative.startsWith(testAbsolute.getPath()));
+            Assert.assertFalse(testParentChildRelative.startsWith(testParentAbsolute));
+            Assert.assertFalse(testParentChildRelative.startsWith(testParentAbsolute.getPath()));
+            Assert.assertFalse(testParentChildRelative.startsWith(testParentChildAbsolute));
+            Assert.assertFalse(testParentChildRelative.startsWith(testParentChildAbsolute.getPath()));
+        };
+        ctx.eval(LANGAUGE_ID, "");
+    }
+
+    @Test
+    public void testEndsWith() {
+        Context ctx = cfg.getContext();
+        languageAction = (Env env) -> {
+            TruffleFile testParentInnerAbsolute = env.getTruffleFile("/test/parent/inner");
+            TruffleFile testParentInnerRelative = env.getTruffleFile("test/parent/inner");
+            TruffleFile innerAbsolute = env.getTruffleFile("/inner");
+            TruffleFile innerRelative = env.getTruffleFile("inner");
+            TruffleFile parentInnerAbsolute = env.getTruffleFile("/parent/inner");
+            TruffleFile parentInnerRelative = env.getTruffleFile("parent/inner");
+            TruffleFile nnerRelative = env.getTruffleFile("nner");
+            TruffleFile testParentSiblingAbsolute = env.getTruffleFile("/test/parent/sibling");
+            TruffleFile testParentSiblingRelative = env.getTruffleFile("test/parent/sibling");
+            TruffleFile testParentInnerChildAbsolute = env.getTruffleFile("/test/parent/inner/child");
+            TruffleFile testParentInnerChildRelative = env.getTruffleFile("test/parent/inner/child");
+
+            Assert.assertTrue(testParentInnerAbsolute.endsWith(testParentInnerAbsolute));
+            Assert.assertTrue(testParentInnerAbsolute.endsWith(testParentInnerAbsolute.getPath()));
+            Assert.assertTrue(testParentInnerAbsolute.endsWith(testParentInnerRelative));
+            Assert.assertTrue(testParentInnerAbsolute.endsWith(testParentInnerRelative.getPath()));
+            Assert.assertFalse(testParentInnerAbsolute.endsWith(innerAbsolute));
+            Assert.assertFalse(testParentInnerAbsolute.endsWith(innerAbsolute.getPath()));
+            Assert.assertTrue(testParentInnerAbsolute.endsWith(innerRelative));
+            Assert.assertTrue(testParentInnerAbsolute.endsWith(innerRelative.getPath()));
+            Assert.assertFalse(testParentInnerAbsolute.endsWith(parentInnerAbsolute));
+            Assert.assertFalse(testParentInnerAbsolute.endsWith(parentInnerAbsolute.getPath()));
+            Assert.assertTrue(testParentInnerAbsolute.endsWith(parentInnerRelative));
+            Assert.assertTrue(testParentInnerAbsolute.endsWith(parentInnerRelative.getPath()));
+            Assert.assertFalse(testParentInnerAbsolute.endsWith(nnerRelative));
+            Assert.assertFalse(testParentInnerAbsolute.endsWith(nnerRelative.getPath()));
+            Assert.assertFalse(testParentInnerAbsolute.endsWith(testParentSiblingAbsolute));
+            Assert.assertFalse(testParentInnerAbsolute.endsWith(testParentSiblingAbsolute.getPath()));
+            Assert.assertFalse(testParentInnerAbsolute.endsWith(testParentSiblingRelative));
+            Assert.assertFalse(testParentInnerAbsolute.endsWith(testParentSiblingRelative.getPath()));
+            Assert.assertFalse(testParentInnerAbsolute.endsWith(testParentInnerChildAbsolute));
+            Assert.assertFalse(testParentInnerAbsolute.endsWith(testParentInnerChildAbsolute.getPath()));
+            Assert.assertFalse(testParentInnerAbsolute.endsWith(testParentInnerChildRelative));
+            Assert.assertFalse(testParentInnerAbsolute.endsWith(testParentInnerChildRelative.getPath()));
+            Assert.assertFalse(testParentInnerRelative.endsWith(testParentInnerAbsolute));
+            Assert.assertFalse(testParentInnerRelative.endsWith(testParentInnerAbsolute.getPath()));
+            Assert.assertTrue(testParentInnerRelative.endsWith(testParentInnerRelative));
+            Assert.assertTrue(testParentInnerRelative.endsWith(testParentInnerRelative.getPath()));
+            Assert.assertFalse(testParentInnerRelative.endsWith(innerAbsolute));
+            Assert.assertFalse(testParentInnerRelative.endsWith(innerAbsolute.getPath()));
+            Assert.assertTrue(testParentInnerRelative.endsWith(innerRelative));
+            Assert.assertTrue(testParentInnerRelative.endsWith(innerRelative.getPath()));
+            Assert.assertFalse(testParentInnerRelative.endsWith(parentInnerAbsolute));
+            Assert.assertFalse(testParentInnerRelative.endsWith(parentInnerAbsolute.getPath()));
+            Assert.assertTrue(testParentInnerRelative.endsWith(parentInnerRelative));
+            Assert.assertTrue(testParentInnerRelative.endsWith(parentInnerRelative.getPath()));
+            Assert.assertFalse(testParentInnerRelative.endsWith(nnerRelative));
+            Assert.assertFalse(testParentInnerRelative.endsWith(nnerRelative.getPath()));
+            Assert.assertFalse(testParentInnerRelative.endsWith(testParentSiblingAbsolute));
+            Assert.assertFalse(testParentInnerRelative.endsWith(testParentSiblingAbsolute.getPath()));
+            Assert.assertFalse(testParentInnerRelative.endsWith(testParentSiblingRelative));
+            Assert.assertFalse(testParentInnerRelative.endsWith(testParentSiblingRelative.getPath()));
+            Assert.assertFalse(testParentInnerRelative.endsWith(testParentInnerChildAbsolute));
+            Assert.assertFalse(testParentInnerRelative.endsWith(testParentInnerChildAbsolute.getPath()));
+            Assert.assertFalse(testParentInnerRelative.endsWith(testParentInnerChildRelative));
+            Assert.assertFalse(testParentInnerRelative.endsWith(testParentInnerChildRelative.getPath()));
+        };
+        ctx.eval(LANGAUGE_ID, "");
+    }
+
+    @Test
+    public void testNewDirectoryStream() {
+        Context ctx = cfg.getContext();
+        Path path = cfg.getPath();
+        boolean canRead = cfg.canRead();
+        languageAction = (Env env) -> {
+            Path folderExisting = path.resolve(FOLDER_EXISTING);
+            TruffleFile file = env.getTruffleFile(folderExisting.toString());
+            Set<String> expected = new HashSet<>();
+            Collections.addAll(expected, FILE_EXISTING, FOLDER_EXISTING_INNER1, FOLDER_EXISTING_INNER2);
+            try (DirectoryStream<TruffleFile> stream = file.newDirectoryStream()) {
+                Assert.assertTrue(cfg.formatErrorMessage("Expected SecurityException"), canRead);
+                Set<String> result = new HashSet<>();
+                for (TruffleFile child : stream) {
+                    result.add(child.getName());
+                }
+                Assert.assertEquals(expected, result);
+            } catch (SecurityException se) {
+                Assert.assertFalse(cfg.formatErrorMessage("Unexpected SecurityException"), canRead);
+            } catch (IOException ioe) {
+                throw new AssertionError(cfg.formatErrorMessage(ioe.getMessage()), ioe);
+            }
+        };
+        ctx.eval(LANGAUGE_ID, "");
+    }
+
+    @Test
+    public void testVisit() {
+        final Context ctx = cfg.getContext();
+        final Path path = cfg.getPath();
+        final boolean canRead = cfg.canRead();
+        languageAction = (Env env) -> {
+            TruffleFile root = env.getTruffleFile(path.toString());
+            TruffleFile existingFolder = root.resolve(FOLDER_EXISTING);
+            try {
+                // @formatter:off
+                TestVisitor visitor = TestVisitor.newBuilder(existingFolder).
+                        folder(FOLDER_EXISTING_INNER1).
+                            file(FILE_EXISTING).
+                            file(FILE_EXISTING2).
+                        end().
+                        folder(FOLDER_EXISTING_INNER2).
+                            folder(FOLDER_EXISTING_INNER1).
+                            end().
+                            folder(FOLDER_EXISTING_INNER2).
+                                file(FILE_EXISTING).
+                            end().
+                            file(FILE_EXISTING).
+                            file(FILE_EXISTING2).
+                        end().
+                        file(FILE_EXISTING).
+                        build();
+                // @formatter:on
+                existingFolder.visit(visitor, Integer.MAX_VALUE, FileVisitOption.FOLLOW_LINKS);
+                Assert.assertTrue(cfg.formatErrorMessage("Expected SecurityException"), canRead);
+                visitor.assertConsumed();
+                TruffleFile existingFile = existingFolder.resolve(FILE_EXISTING);
+                visitor = TestVisitor.newBuilder(existingFile).build();
+                existingFile.visit(visitor, Integer.MAX_VALUE, FileVisitOption.FOLLOW_LINKS);
+                visitor.assertConsumed();
+                // @formatter:off
+                visitor = TestVisitor.newBuilder(existingFolder).
+                        file(FOLDER_EXISTING_INNER1).
+                        file(FOLDER_EXISTING_INNER2).
+                        file(FILE_EXISTING).
+                        build();
+                // @formatter:on
+                existingFolder.visit(visitor, 1, FileVisitOption.FOLLOW_LINKS);
+                visitor.assertConsumed();
+                // @formatter:off
+                visitor = TestVisitor.newBuilder(existingFolder).
+                        folder(FOLDER_EXISTING_INNER1).
+                            file(FILE_EXISTING).
+                            file(FILE_EXISTING2).
+                        end().
+                        folder(FOLDER_EXISTING_INNER2).
+                            file(FOLDER_EXISTING_INNER1).
+                            file(FOLDER_EXISTING_INNER2).
+                            file(FILE_EXISTING).
+                            file(FILE_EXISTING2).
+                        end().
+                        file(FILE_EXISTING).
+                        build();
+                // @formatter:on
+                existingFolder.visit(visitor, 2, FileVisitOption.FOLLOW_LINKS);
+                visitor.assertConsumed();
+                // @formatter:off
+                visitor = TestVisitor.newBuilder(existingFolder).
+                        folder(FOLDER_EXISTING_INNER1).
+                            file(FILE_EXISTING).
+                            file(FILE_EXISTING2).
+                        end().
+                        folder(FOLDER_EXISTING_INNER2).
+                            skipSubTree().
+                        end().
+                        file(FILE_EXISTING).
+                        build();
+                // @formatter:on
+                existingFolder.visit(visitor, Integer.MAX_VALUE, FileVisitOption.FOLLOW_LINKS);
+                Assert.assertTrue(cfg.formatErrorMessage("Expected SecurityException"), canRead);
+                visitor.assertConsumed();
+                // TestVisitor cannot be used for SKIP_SIBLINGS due to random order of files on file
+                // system
+                FileVisitor<TruffleFile> fileVisitor = new FileVisitor<TruffleFile>() {
+
+                    private boolean skipReturned;
+                    private Set<TruffleFile> importantFiles;
+
+                    {
+                        importantFiles = new HashSet<>();
+                        importantFiles.add(existingFolder.resolve(FOLDER_EXISTING_INNER1));
+                        importantFiles.add(existingFolder.resolve(FOLDER_EXISTING_INNER2));
+                        importantFiles.add(existingFile);
+                    }
+
+                    @Override
+                    public FileVisitResult preVisitDirectory(TruffleFile dir, BasicFileAttributes attrs) throws IOException {
+                        return check(dir);
+                    }
+
+                    @Override
+                    public FileVisitResult visitFile(TruffleFile file, BasicFileAttributes attrs) throws IOException {
+                        return check(file);
+                    }
+
+                    @Override
+                    public FileVisitResult visitFileFailed(TruffleFile file, IOException exc) throws IOException {
+                        return FileVisitResult.TERMINATE;
+                    }
+
+                    @Override
+                    public FileVisitResult postVisitDirectory(TruffleFile dir, IOException exc) throws IOException {
+                        return FileVisitResult.CONTINUE;
+                    }
+
+                    private FileVisitResult check(TruffleFile file) {
+                        if (importantFiles.contains(file)) {
+                            if (skipReturned) {
+                                throw new AssertionError("Visited skipped sibling: " + file);
+                            } else {
+                                skipReturned = true;
+                                return FileVisitResult.SKIP_SIBLINGS;
+                            }
+                        }
+                        return FileVisitResult.CONTINUE;
+                    }
+                };
+                existingFolder.visit(fileVisitor, Integer.MAX_VALUE, FileVisitOption.FOLLOW_LINKS);
+            } catch (SecurityException se) {
+                Assert.assertFalse(cfg.formatErrorMessage("Unexpected SecurityException"), canRead);
+            } catch (IOException ioe) {
+                throw new AssertionError(cfg.formatErrorMessage(ioe.getMessage()), ioe);
+            }
+        };
+        ctx.eval(LANGAUGE_ID, "");
+    }
+
+    @Test
+    public void testCreateLink() {
+        Context ctx = cfg.getContext();
+        Path path = cfg.getPath();
+        boolean canWrite = cfg.canWrite();
+        languageAction = (Env env) -> {
+            final TruffleFile root = env.getTruffleFile(path.toString());
+            try {
+                TruffleFile target = root.resolve(FOLDER_EXISTING).resolve(FILE_EXISTING);
+                TruffleFile link = root.resolve(FILE_NEW_LINK);
+                link.createLink(target);
+                Assert.assertTrue(cfg.formatErrorMessage("Expected SecurityException"), canWrite);
+            } catch (SecurityException se) {
+                Assert.assertFalse(cfg.formatErrorMessage("Unexpected SecurityException"), canWrite);
+            } catch (IOException ioe) {
+                throw new AssertionError(cfg.formatErrorMessage(ioe.getMessage()), ioe);
+            } catch (UnsupportedOperationException uoe) {
+                // Links may not be supported on file system
+            }
+        };
+        ctx.eval(LANGAUGE_ID, "");
+    }
+
+    @Test
+    public void testCreateSymbolicLink() {
+        Context ctx = cfg.getContext();
+        Path path = cfg.getPath();
+        boolean canWrite = cfg.canWrite();
+        languageAction = (Env env) -> {
+            TruffleFile root = env.getTruffleFile(path.toString());
+            try {
+                TruffleFile target = root.resolve(FOLDER_EXISTING).resolve(FILE_EXISTING);
+                TruffleFile link = root.resolve(FILE_NEW_SYMLINK);
+                link.createSymbolicLink(target);
+                Assert.assertTrue(cfg.formatErrorMessage("Expected SecurityException"), canWrite);
+            } catch (SecurityException se) {
+                Assert.assertFalse(cfg.formatErrorMessage("Unexpected SecurityException"), canWrite);
+            } catch (IOException ioe) {
+                throw new AssertionError(cfg.formatErrorMessage(ioe.getMessage()), ioe);
+            } catch (UnsupportedOperationException uoe) {
+                // Symbolik links may not be supported on file system
+            }
+        };
+        ctx.eval(LANGAUGE_ID, "");
+    }
+
+    @Test
+    public void testGetOwner() {
+        Context ctx = cfg.getContext();
+        Path path = cfg.getPath();
+        boolean canRead = cfg.canRead();
+        languageAction = (Env env) -> {
+            final TruffleFile root = env.getTruffleFile(path.toString());
+            try {
+                TruffleFile file = root.resolve(FOLDER_EXISTING);
+                UserPrincipal owner = file.getOwner();
+                Assert.assertTrue(cfg.formatErrorMessage("Expected SecurityException"), canRead);
+                Assert.assertNotNull(owner);
+            } catch (SecurityException se) {
+                Assert.assertFalse(cfg.formatErrorMessage("Unexpected SecurityException"), canRead);
+            } catch (IOException ioe) {
+                throw new AssertionError(cfg.formatErrorMessage(ioe.getMessage()), ioe);
+            } catch (UnsupportedOperationException uoe) {
+                // Onwer may not be supported on file system
+            }
+        };
+        ctx.eval(LANGAUGE_ID, "");
+    }
+
+    @Test
+    public void testGetGroup() {
+        Context ctx = cfg.getContext();
+        Path path = cfg.getPath();
+        boolean canRead = cfg.canRead();
+        languageAction = (Env env) -> {
+            final TruffleFile root = env.getTruffleFile(path.toString());
+            try {
+                TruffleFile file = root.resolve(FOLDER_EXISTING);
+                GroupPrincipal group = file.getGroup();
+                Assert.assertTrue(cfg.formatErrorMessage("Expected SecurityException"), canRead);
+                Assert.assertNotNull(group);
+            } catch (SecurityException se) {
+                Assert.assertFalse(cfg.formatErrorMessage("Unexpected SecurityException"), canRead);
+            } catch (IOException ioe) {
+                throw new AssertionError(cfg.formatErrorMessage(ioe.getMessage()), ioe);
+            } catch (UnsupportedOperationException uoe) {
+                // Group may not be supported on file system
+            }
+        };
+        ctx.eval(LANGAUGE_ID, "");
+    }
+
+    @Test
+    public void testCopy() {
+        Context ctx = cfg.getContext();
+        Path path = cfg.getPath();
+        boolean canRead = cfg.canRead();
+        boolean canWrite = cfg.canWrite();
+        languageAction = (Env env) -> {
+            TruffleFile root = env.getTruffleFile(path.toString());
+            try {
+                TruffleFile file = root.resolve(FOLDER_EXISTING).resolve(FILE_EXISTING);
+                TruffleFile target = root.resolve(FILE_NEW_COPY);
+                file.copy(target);
+                Assert.assertTrue(cfg.formatErrorMessage("Expected SecurityException"), canWrite);
+                if (canRead) {
+                    Collection<? extends TruffleFile> children = root.list();
+                    boolean hasTarget = children.stream().filter((TruffleFile truffleFile) -> FILE_NEW_COPY.equals(truffleFile.getName())).findAny().isPresent();
+                    Assert.assertTrue(cfg.formatErrorMessage("Copied target file should exist"), hasTarget);
+                }
+            } catch (SecurityException se) {
+                Assert.assertFalse(cfg.formatErrorMessage("Unexpected SecurityException"), canWrite);
+            } catch (IOException ioe) {
+                throw new AssertionError(cfg.formatErrorMessage(ioe.getMessage()), ioe);
+            }
+            try {
+                TruffleFile folder = root.resolve(FOLDER_EXISTING);
+                TruffleFile target = root.resolve(FOLDER_NEW_COPY);
+                folder.copy(target);
+                Assert.assertTrue(cfg.formatErrorMessage("Expected SecurityException"), canWrite);
+                if (canRead) {
+                    Collection<? extends TruffleFile> children = root.list();
+                    boolean hasTarget = children.stream().filter((TruffleFile truffleFile) -> FOLDER_NEW_COPY.equals(truffleFile.getName())).findAny().isPresent();
+                    boolean hasChildren = !target.list().isEmpty();
+                    Assert.assertTrue(cfg.formatErrorMessage("Copied target file should exist"), hasTarget);
+                    Assert.assertTrue(cfg.formatErrorMessage("Copied target should not have children"), !hasChildren);
+                }
+            } catch (SecurityException se) {
+                Assert.assertFalse(cfg.formatErrorMessage("Unexpected SecurityException"), canWrite);
+            } catch (IOException ioe) {
+                throw new AssertionError(cfg.formatErrorMessage(ioe.getMessage()), ioe);
+            }
+        };
+        ctx.eval(LANGAUGE_ID, "");
+    }
+
+    @Test
+    public void testExceptions() {
+        final Context ctx = cfg.getContext();
+        languageAction = (Env env) -> {
+            TruffleFile existing = env.getTruffleFile(FOLDER_EXISTING);
+            try {
+                existing.resolve(null);
+                Assert.fail("Should not reach here.");
+            } catch (Exception e) {
+                if (cfg.isDefaultFileSystem()) {
+                    Assert.assertTrue(e instanceof NullPointerException);
+                } else {
+                    Assert.assertTrue(TestAPIAccessor.engineAccess().isHostException(e));
+                    Assert.assertTrue(TestAPIAccessor.engineAccess().asHostException(e) instanceof NullPointerException);
+                }
+            }
+        };
+        ctx.eval(LANGAUGE_ID, "");
+    }
+
     public static final class Configuration implements Closeable {
         private final String name;
         private final Context ctx;
         private final Path path;
         private final Path userDir;
         private final FileSystem fileSystem;
-        private final boolean needsURI;
+        private final boolean isDefaultFileSystem;
         private final boolean readable;
         private final boolean writable;
         private final boolean allowsUserDir;
@@ -706,11 +1181,11 @@ public class VirtualizedFileSystemTest {
                         final Context context,
                         final Path path,
                         final FileSystem fileSystem,
-                        final boolean needsURI,
+                        final boolean isDefaultFileSystem,
                         final boolean readable,
                         final boolean writable,
                         final boolean allowsUserDir) {
-            this(name, context, path, path, fileSystem, needsURI, readable, writable, allowsUserDir, null);
+            this(name, context, path, path, fileSystem, isDefaultFileSystem, readable, writable, allowsUserDir, null);
         }
 
         Configuration(
@@ -719,11 +1194,11 @@ public class VirtualizedFileSystemTest {
                         final Path path,
                         final Path userDir,
                         final FileSystem fileSystem,
-                        final boolean needsURI,
+                        final boolean isDefaultFileSystem,
                         final boolean readable,
                         final boolean writable,
                         final boolean allowsUserDir) {
-            this(name, context, path, userDir, fileSystem, needsURI, readable, writable, allowsUserDir, null);
+            this(name, context, path, userDir, fileSystem, isDefaultFileSystem, readable, writable, allowsUserDir, null);
         }
 
         Configuration(
@@ -732,7 +1207,7 @@ public class VirtualizedFileSystemTest {
                         final Path path,
                         final Path userDir,
                         final FileSystem fileSystem,
-                        final boolean needsURI,
+                        final boolean isDefaultFileSystem,
                         final boolean readable,
                         final boolean writable,
                         final boolean allowsUserDir,
@@ -747,7 +1222,7 @@ public class VirtualizedFileSystemTest {
             this.path = path;
             this.userDir = userDir;
             this.fileSystem = fileSystem;
-            this.needsURI = needsURI;
+            this.isDefaultFileSystem = isDefaultFileSystem;
             this.readable = readable;
             this.writable = writable;
             this.allowsUserDir = allowsUserDir;
@@ -774,10 +1249,6 @@ public class VirtualizedFileSystemTest {
             return userDir;
         }
 
-        boolean needsURI() {
-            return needsURI;
-        }
-
         boolean canRead() {
             return readable;
         }
@@ -788,6 +1259,10 @@ public class VirtualizedFileSystemTest {
 
         boolean allowsUserDir() {
             return allowsUserDir;
+        }
+
+        boolean isDefaultFileSystem() {
+            return isDefaultFileSystem;
         }
 
         String formatErrorMessage(final String message) {
@@ -824,7 +1299,7 @@ public class VirtualizedFileSystemTest {
         }
     }
 
-    @TruffleLanguage.Registration(id = LANGAUGE_ID, name = LANGAUGE_ID, version = "1.0", mimeType = LANGAUGE_ID)
+    @TruffleLanguage.Registration(id = LANGAUGE_ID, name = LANGAUGE_ID, version = "1.0")
     public static class VirtualizedFileSystemTestLanguage extends TruffleLanguage<LanguageContext> {
 
         @Override
@@ -853,8 +1328,17 @@ public class VirtualizedFileSystemTest {
     private static Path createContent(
                     final Path folder,
                     final FileSystem fs) throws IOException {
-        mkdirs(folder.resolve(FOLDER_EXISTING), fs);
-        write(folder.resolve(FOLDER_EXISTING).resolve(FILE_EXISTING), FILE_EXISTING_CONTENT.getBytes(StandardCharsets.UTF_8), fs);
+        Path existing = mkdirs(folder.resolve(FOLDER_EXISTING), fs);
+        Path l2i1 = mkdirs(existing.resolve(FOLDER_EXISTING_INNER1), fs);
+        write(l2i1.resolve(FILE_EXISTING), new byte[0], fs);
+        write(l2i1.resolve(FILE_EXISTING2), new byte[0], fs);
+        Path l2i2 = mkdirs(existing.resolve(FOLDER_EXISTING_INNER2), fs);
+        write(l2i2.resolve(FILE_EXISTING), new byte[0], fs);
+        write(l2i2.resolve(FILE_EXISTING2), new byte[0], fs);
+        mkdirs(l2i2.resolve(FOLDER_EXISTING_INNER1), fs);
+        Path l3i2 = mkdirs(l2i2.resolve(FOLDER_EXISTING_INNER2), fs);
+        write(l3i2.resolve(FILE_EXISTING), new byte[0], fs);
+        write(existing.resolve(FILE_EXISTING), FILE_EXISTING_CONTENT.getBytes(StandardCharsets.UTF_8), fs);
         touch(folder.resolve(FILE_EXISTING_WRITE_MMAP), fs);
         touch(folder.resolve(FILE_EXISTING_DELETE), fs);
         touch(folder.resolve(FILE_EXISTING_RENAME), fs);
@@ -921,7 +1405,7 @@ public class VirtualizedFileSystemTest {
 
     private static void resetLanguageHomes() {
         try {
-            final Class<?> langCacheClz = Class.forName("com.oracle.truffle.api.vm.LanguageCache", true, VirtualizedFileSystemTest.class.getClassLoader());
+            final Class<?> langCacheClz = Class.forName("com.oracle.truffle.polyglot.LanguageCache", true, VirtualizedFileSystemTest.class.getClassLoader());
             final Method reset = langCacheClz.getDeclaredMethod("resetNativeImageCacheLanguageHomes");
             reset.setAccessible(true);
             reset.invoke(null);
@@ -1198,6 +1682,146 @@ public class VirtualizedFileSystemTest {
                 }
             }
             return null;
+        }
+    }
+
+    private static final class TestVisitor implements FileVisitor<TruffleFile> {
+
+        private Node current;
+
+        private TestVisitor(Node root) {
+            this.current = root;
+        }
+
+        void assertConsumed() {
+            Assert.assertTrue(current.children.isEmpty());
+        }
+
+        @Override
+        public FileVisitResult preVisitDirectory(TruffleFile dir, BasicFileAttributes attrs) throws IOException {
+            Node node = null;
+            for (Node child : current.children) {
+                if (child.file.equals(dir)) {
+                    node = child;
+                    break;
+                }
+            }
+            Assert.assertNotNull(node);
+            Assert.assertTrue(node.folder);
+            if (node.action == FileVisitResult.SKIP_SIBLINGS || node.action == FileVisitResult.SKIP_SUBTREE) {
+                current.children.remove(node);
+            } else {
+                current = node;
+            }
+            return node.action;
+        }
+
+        @Override
+        public FileVisitResult visitFile(TruffleFile file, BasicFileAttributes attrs) throws IOException {
+            Node node = null;
+            for (Node child : current.children) {
+                if (child.file.equals(file)) {
+                    node = child;
+                    break;
+                }
+            }
+            Assert.assertNotNull(node);
+            Assert.assertFalse(node.folder);
+            current.children.remove(node);
+            return node.action;
+        }
+
+        @Override
+        public FileVisitResult visitFileFailed(TruffleFile file, IOException exc) throws IOException {
+            return FileVisitResult.TERMINATE;
+        }
+
+        @Override
+        public FileVisitResult postVisitDirectory(TruffleFile dir, IOException exc) throws IOException {
+            Assert.assertTrue(current.children.isEmpty());
+            Node prev = current;
+            current = current.parent;
+            current.children.remove(prev);
+            return FileVisitResult.CONTINUE;
+        }
+
+        static Builder newBuilder(TruffleFile root) {
+            return new Builder(root);
+        }
+
+        static final class Builder {
+            private final Node rootNode;
+            private Node currentScope;
+
+            Builder(TruffleFile start) {
+                rootNode = new Node(null, (TruffleFile) null, true);
+                this.currentScope = new Node(rootNode, start, start.isDirectory());
+                rootNode.children.add(this.currentScope);
+            }
+
+            Builder folder(String name) {
+                Node newScope = new Node(currentScope, name, true);
+                currentScope.children.add(newScope);
+                currentScope = newScope;
+                return this;
+            }
+
+            Builder end() {
+                currentScope = currentScope.parent;
+                if (currentScope == null) {
+                    throw new IllegalStateException("Closing non opened folder.");
+                }
+                return this;
+            }
+
+            Builder file(String name) {
+                Node node = new Node(currentScope, name, false);
+                currentScope.children.add(node);
+                return this;
+            }
+
+            Builder skipSubTree() {
+                currentScope.action = FileVisitResult.SKIP_SUBTREE;
+                return this;
+            }
+
+            TestVisitor build() {
+                return new TestVisitor(rootNode);
+            }
+        }
+
+        private static final class Node {
+
+            private final Node parent;
+            private final TruffleFile file;
+            private final boolean folder;
+            private final Collection<Node> children;
+            private FileVisitResult action;
+
+            Node(Node parent, TruffleFile file, boolean folder) {
+                this.parent = parent;
+                this.file = file;
+                this.folder = folder;
+                this.children = folder ? new ArrayList<>() : Collections.emptyList();
+                this.action = FileVisitResult.CONTINUE;
+            }
+
+            Node(Node parent, String name, boolean folder) {
+                this(parent, parent.file.resolve(name), folder);
+            }
+
+            @Override
+            public String toString() {
+                return file.toString();
+            }
+        }
+    }
+
+    private static final TestAPIAccessor API = new TestAPIAccessor();
+
+    private static final class TestAPIAccessor extends Accessor {
+        static EngineSupport engineAccess() {
+            return API.engineSupport();
         }
     }
 }

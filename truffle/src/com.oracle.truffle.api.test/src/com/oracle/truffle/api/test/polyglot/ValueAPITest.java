@@ -2,25 +2,41 @@
  * Copyright (c) 2018, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
- * This code is free software; you can redistribute it and/or modify it
- * under the terms of the GNU General Public License version 2 only, as
- * published by the Free Software Foundation.  Oracle designates this
- * particular file as subject to the "Classpath" exception as provided
- * by Oracle in the LICENSE file that accompanied this code.
+ * The Universal Permissive License (UPL), Version 1.0
  *
- * This code is distributed in the hope that it will be useful, but WITHOUT
- * ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
- * FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License
- * version 2 for more details (a copy is included in the LICENSE file that
- * accompanied this code).
+ * Subject to the condition set forth below, permission is hereby granted to any
+ * person obtaining a copy of this software, associated documentation and/or
+ * data (collectively the "Software"), free of charge and under any and all
+ * copyright rights in the Software, and any and all patent rights owned or
+ * freely licensable by each licensor hereunder covering either (i) the
+ * unmodified Software as contributed to or provided by such licensor, or (ii)
+ * the Larger Works (as defined below), to deal in both
  *
- * You should have received a copy of the GNU General Public License version
- * 2 along with this work; if not, write to the Free Software Foundation,
- * Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301 USA.
+ * (a) the Software, and
  *
- * Please contact Oracle, 500 Oracle Parkway, Redwood Shores, CA 94065 USA
- * or visit www.oracle.com if you need additional information or have any
- * questions.
+ * (b) any piece of software and/or hardware listed in the lrgrwrks.txt file if
+ * one is included with the Software each a "Larger Work" to which the Software
+ * is contributed by such licensors),
+ *
+ * without restriction, including without limitation the rights to copy, create
+ * derivative works of, display, perform, and distribute the Software and make,
+ * use, sell, offer for sale, import, export, have made, and have sold the
+ * Software and the Larger Work(s), and to sublicense the foregoing rights on
+ * either these or other terms.
+ *
+ * This license is subject to the following condition:
+ *
+ * The above copyright notice and either this complete permission notice or at a
+ * minimum a reference to the UPL must be included in all copies or substantial
+ * portions of the Software.
+ *
+ * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+ * IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+ * FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+ * AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+ * LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+ * OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+ * SOFTWARE.
  */
 package com.oracle.truffle.api.test.polyglot;
 
@@ -40,6 +56,7 @@ import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertNull;
 import static org.junit.Assert.assertSame;
+import static org.junit.Assert.assertNotEquals;
 import static org.junit.Assert.assertTrue;
 import static org.junit.Assert.fail;
 
@@ -73,6 +90,17 @@ import org.junit.Assert;
 import org.junit.Before;
 import org.junit.ComparisonFailure;
 import org.junit.Test;
+
+import com.oracle.truffle.api.CallTarget;
+import com.oracle.truffle.api.Truffle;
+import com.oracle.truffle.api.interop.ForeignAccess;
+import com.oracle.truffle.api.interop.KeyInfo;
+import com.oracle.truffle.api.interop.MessageResolution;
+import com.oracle.truffle.api.interop.Resolve;
+import com.oracle.truffle.api.interop.TruffleObject;
+import com.oracle.truffle.api.interop.UnknownIdentifierException;
+import com.oracle.truffle.api.nodes.Node;
+import com.oracle.truffle.api.nodes.RootNode;
 
 public class ValueAPITest {
 
@@ -202,7 +230,6 @@ public class ValueAPITest {
             } else {
                 assertValue(context, context.asValue(value), MEMBERS, HOST_OBJECT);
             }
-
         }
     }
 
@@ -480,10 +507,23 @@ public class ValueAPITest {
             assertFalse(value.hasArrayElements());
         });
 
+        MembersAndInvocable invocable = new MembersAndInvocable();
+        invocable.invokeMember = "foo";
+        invocable.invocableResult = "foobarbaz";
+
+        objectCoercionTest(invocable, Map.class, (v) -> {
+            Value value = context.asValue(v);
+            assertTrue(value.canInvokeMember("foo"));
+            assertEquals("foobarbaz", value.invokeMember("foo").asString());
+        }, false);
+    }
+
+    private <T> void objectCoercionTest(Object value, Class<T> expectedType, Consumer<T> validator) {
+        objectCoercionTest(value, expectedType, validator, true);
     }
 
     @SuppressWarnings({"unchecked"})
-    private <T> void objectCoercionTest(Object value, Class<T> expectedType, Consumer<T> validator) {
+    private <T> void objectCoercionTest(Object value, Class<T> expectedType, Consumer<T> validator, boolean valueTest) {
         Value coerce = context.asValue(new CoerceObject()).getMember("coerce");
         T result = (T) context.asValue(value).as(Object.class);
         if (result != null) {
@@ -499,8 +539,10 @@ public class ValueAPITest {
             coerce.execute(value, validator);
         }
 
-        assertValue(context, context.asValue(value));
-        assertValue(context, context.asValue(result));
+        if (valueTest) {
+            assertValue(context, context.asValue(value));
+            assertValue(context, context.asValue(result));
+        }
     }
 
     private static class DummyList extends DummyCollection implements List<Object> {
@@ -745,6 +787,118 @@ public class ValueAPITest {
 
         public Object execute(Value... arguments) {
             return executableResult;
+        }
+
+    }
+
+    static class MembersAndInvocable implements TruffleObject {
+
+        String invokeMember;
+        Object invocableResult;
+
+        @Override
+        public ForeignAccess getForeignAccess() {
+            return MembersAndInvocableMessageResolutionForeign.ACCESS;
+        }
+
+        public static boolean isInstance(TruffleObject obj) {
+            return obj instanceof MembersAndInvocable;
+        }
+
+        @MessageResolution(receiverType = MembersAndInvocable.class)
+        static final class MembersAndInvocableMessageResolution {
+
+            @Resolve(message = "HAS_KEYS")
+            abstract static class MemberHasKeysNode extends Node {
+
+                @SuppressWarnings("unused")
+                public Object access(MembersAndInvocable mi) {
+                    return true;
+                }
+            }
+
+            @Resolve(message = "KEYS")
+            abstract static class MemberKeysNode extends Node {
+
+                @SuppressWarnings("unused")
+                public Object access(MembersAndInvocable mi, boolean internal) {
+                    return new MemberKeysTruffleObject(mi.invokeMember);
+                }
+            }
+
+            @Resolve(message = "INVOKE")
+            abstract static class MemberInvokeNode extends Node {
+
+                @SuppressWarnings("unused")
+                public Object access(MembersAndInvocable mi, String name, Object... arguments) {
+                    if (name.equals(mi.invokeMember)) {
+                        return mi.invocableResult;
+                    } else {
+                        throw UnknownIdentifierException.raise(name);
+                    }
+                }
+            }
+
+            @Resolve(message = "KEY_INFO")
+            abstract static class MemberKeyInfoNode extends Node {
+
+                public int access(MembersAndInvocable mi, String propName) {
+                    if (propName.equals(mi.invokeMember)) {
+                        return KeyInfo.READABLE | KeyInfo.INVOCABLE;
+                    } else {
+                        return KeyInfo.NONE;
+                    }
+                }
+            }
+        }
+
+        static final class MemberKeysTruffleObject implements TruffleObject {
+
+            private final String keyName;
+
+            MemberKeysTruffleObject(String keyName) {
+                this.keyName = keyName;
+            }
+
+            @Override
+            public ForeignAccess getForeignAccess() {
+                return MemberKeysMessageResolutionForeign.ACCESS;
+            }
+
+            public static boolean isInstance(TruffleObject obj) {
+                return obj instanceof MemberKeysTruffleObject;
+            }
+
+            @MessageResolution(receiverType = MemberKeysTruffleObject.class)
+            static final class MemberKeysMessageResolution {
+
+                @Resolve(message = "HAS_SIZE")
+                abstract static class MemberKeysHasSizeNode extends Node {
+
+                    @SuppressWarnings("unused")
+                    public boolean access(MemberKeysTruffleObject keys) {
+                        return true;
+                    }
+                }
+
+                @Resolve(message = "GET_SIZE")
+                abstract static class MemberKeysGetSizeNode extends Node {
+
+                    @SuppressWarnings("unused")
+                    public int access(MemberKeysTruffleObject keys) {
+                        return 1;
+                    }
+                }
+
+                @Resolve(message = "READ")
+                abstract static class MemberKeysReadNode extends Node {
+
+                    @SuppressWarnings("unused")
+                    public Object access(MemberKeysTruffleObject keys, int index) {
+                        return keys.keyName;
+                    }
+                }
+            }
         }
 
     }
@@ -1061,6 +1215,21 @@ public class ValueAPITest {
         assertFalse(rv.removeMember("notAMember"));
     }
 
+    @Test
+    public void testNullError() {
+        Value members = context.asValue(new MembersAndArrayAndExecutableAndInstantiable());
+        assertFails(() -> members.putMember(null, "value"), NullPointerException.class, "identifier");
+        assertFails(() -> members.getMember(null), NullPointerException.class, "identifier");
+        assertFails(() -> members.hasMember(null), NullPointerException.class, "identifier");
+        assertFails(() -> members.removeMember(null), NullPointerException.class, "identifier");
+
+        assertFails(() -> members.execute((Object[]) null), NullPointerException.class, null);
+        assertFails(() -> members.executeVoid((Object[]) null), NullPointerException.class, null);
+        assertFails(() -> members.newInstance((Object[]) null), NullPointerException.class, null);
+        assertFails(() -> members.as((Class<?>) null), NullPointerException.class, null);
+        assertFails(() -> members.as((TypeLiteral<?>) null), NullPointerException.class, null);
+    }
+
     @FunctionalInterface
     public interface ExecutableInterface {
 
@@ -1159,6 +1328,43 @@ public class ValueAPITest {
                                         "'2'(language: Java, type: java.lang.Integer)].");
     }
 
+    public static class InvocableType {
+
+        @SuppressWarnings("unused")
+        public String f(int a, byte b) {
+            return "1";
+        }
+
+        @Override
+        public String toString() {
+            return getClass().getCanonicalName();
+        }
+    }
+
+    @Test
+    public void testInvokableErrors() {
+        Value value = context.asValue(new InvocableType());
+        assertTrue(value.canInvokeMember("f"));
+
+        assertFails(() -> value.invokeMember(""), IllegalArgumentException.class,
+                        "Invalid member key '' for object 'com.oracle.truffle.api.test.polyglot.ValueAPITest.InvocableType'" +
+                                        "(language: Java, type: com.oracle.truffle.api.test.polyglot.ValueAPITest$InvocableType).");
+        assertFails(() -> value.invokeMember("f", 2), IllegalArgumentException.class,
+                        "Invalid argument count when executing 'com.oracle.truffle.api.test.polyglot.ValueAPITest.InvocableType'" +
+                                        "(language: Java, type: com.oracle.truffle.api.test.polyglot.ValueAPITest$InvocableType) " +
+                                        "with arguments ['2'(language: Java, type: java.lang.Integer)]. Expected 2 argument(s) but got 1.");
+        assertFails(() -> value.invokeMember("f", "2", "3"), IllegalArgumentException.class,
+                        "Invalid argument when executing 'com.oracle.truffle.api.test.polyglot.ValueAPITest.InvocableType'" +
+                                        "(language: Java, type: com.oracle.truffle.api.test.polyglot.ValueAPITest$InvocableType) " +
+                                        "with arguments ['2'(language: Java, type: java.lang.String), '3'(language: Java, type: java.lang.String)].");
+        assertEquals("1", value.invokeMember("f", 2, 3).asString());
+
+        Value primitiveValue = context.asValue(42);
+        assertFails(() -> primitiveValue.invokeMember(""), UnsupportedOperationException.class,
+                        "Unsupported operation Value.invoke(, Object...) for '42'(language: Java, type: java.lang.Integer)." +
+                                        " You can ensure that the operation is supported using Value.canInvoke(String).");
+    }
+
     private static void assertFails(Runnable r, Class<?> hostExceptionType, String message) {
         try {
             r.run();
@@ -1167,7 +1373,7 @@ public class ValueAPITest {
             if (!hostExceptionType.isInstance(e)) {
                 throw new AssertionError(e.getClass().getName() + ":" + e.getMessage(), e);
             }
-            if (!message.equals(e.getMessage())) {
+            if (message != null && !message.equals(e.getMessage())) {
                 ComparisonFailure f = new ComparisonFailure(null, message, e.getMessage());
                 f.initCause(e);
                 throw f;
@@ -1203,6 +1409,130 @@ public class ValueAPITest {
 
         assertTrue(v.removeArrayElement(0));
         assertTrue(v.getArraySize() == 0);
+    }
+
+    @Test
+    public void testRecursiveList() {
+        Object[] o1 = new Object[1];
+        Object[] o2 = new Object[]{o1};
+        o1[0] = o2;
+
+        Value v1 = context.asValue(o1);
+        Value v2 = context.asValue(o2);
+
+        assertEquals(v1.as(List.class), v1.as(List.class));
+        assertEquals(v2.as(List.class), v2.as(List.class));
+        assertNotEquals(v1.as(List.class), (v2.as(List.class)));
+        assertNotEquals(v1, v2);
+        assertEquals(v1, v1);
+        assertEquals(v2, v2);
+
+        ValueAssert.assertValue(context, v1);
+        ValueAssert.assertValue(context, v2);
+    }
+
+    public static class RecursiveObject {
+
+        public RecursiveObject rec;
+
+    }
+
+    @Test
+    public void testRecursiveObject() {
+        RecursiveObject o1 = new RecursiveObject();
+        RecursiveObject o2 = new RecursiveObject();
+        o1.rec = o2;
+        o2.rec = o1;
+
+        Value v1 = context.asValue(o1);
+        Value v2 = context.asValue(o2);
+
+        assertEquals(v1.as(Map.class), v1.as(Map.class));
+        assertEquals(v2.as(Map.class), v2.as(Map.class));
+        assertNotEquals(v1.as(Map.class), v2.as(Map.class));
+        assertNotEquals(v1, v2);
+        assertEquals(v1, v1);
+        assertEquals(v2, v2);
+
+        ValueAssert.assertValue(context, v1);
+        ValueAssert.assertValue(context, v2);
+    }
+
+    public interface EmptyInterface {
+
+        void foo();
+
+        void bar();
+
+    }
+
+    @FunctionalInterface
+    public interface EmptyFunctionalInterface {
+
+        void noop();
+
+    }
+
+    @Test
+    public void testValueContextPropagation() {
+        ProxyInteropObject o = new ProxyInteropObject() {
+            @Override
+            public boolean hasKeys() {
+                return true;
+            }
+
+            @Override
+            public boolean isExecutable() {
+                return true;
+            }
+
+            @Override
+            public boolean hasSize() {
+                return true;
+            }
+        };
+        ProxyLanguage.setDelegate(new ProxyLanguage() {
+            @Override
+            protected CallTarget parse(ParsingRequest request) throws Exception {
+                return Truffle.getRuntime().createCallTarget(RootNode.createConstantNode(o));
+            }
+
+            @Override
+            protected String toString(@SuppressWarnings("hiding") LanguageContext context, Object value) {
+                if (o == value) {
+                    return "true";
+                } else {
+                    return "false";
+                }
+            }
+        });
+        Value v = context.eval(ProxyLanguage.ID, "");
+        assertEquals("true", v.toString());
+        assertEquals("true", context.asValue(v).toString());
+        assertEquals("true", v.as(Map.class).toString());
+        assertEquals("true", v.as(Function.class).toString());
+        assertEquals("true", v.as(List.class).toString());
+        assertEquals("true", context.asValue(v.as(Map.class)).toString());
+        assertEquals("true", context.asValue(v.as(Function.class)).toString());
+        assertEquals("true", context.asValue(v.as(List.class)).toString());
+
+        assertEquals(v, v);
+        assertEquals(v, context.asValue(v));
+
+        assertEquals(v.as(Map.class), v.as(Map.class));
+        assertEquals(v.as(Function.class), v.as(Function.class));
+        assertEquals(v.as(List.class), v.as(List.class));
+        assertEquals(v.as(Map.class), context.asValue(v.as(Map.class)).as(Map.class));
+        assertEquals(v.as(Function.class), context.asValue(v.as(Function.class)).as(Function.class));
+        assertEquals(v.as(List.class), context.asValue(v.as(List.class)).as(List.class));
+
+        assertNotEquals(v.as(Function.class), v.as(Map.class));
+        assertNotEquals(v.as(Function.class), v.as(List.class));
+        assertNotEquals(v.as(Map.class), v.as(Function.class));
+        assertNotEquals(v.as(Map.class), v.as(List.class));
+        assertNotEquals(v.as(List.class), v.as(Function.class));
+        assertNotEquals(v.as(List.class), v.as(Map.class));
+
     }
 
 }

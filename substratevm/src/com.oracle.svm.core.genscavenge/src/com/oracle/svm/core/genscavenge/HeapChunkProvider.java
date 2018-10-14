@@ -163,7 +163,7 @@ class HeapChunkProvider {
             pushUnusedAlignedChunk(chunk);
         } else {
             log().string("  release memory to the OS").newline();
-            CommittedMemoryProvider.get().free(chunk, HeapPolicy.getAlignedHeapChunkSize(), HeapPolicy.getAlignedHeapChunkAlignment(), false);
+            freeAlignedChunk(chunk);
         }
         log().string("  ]").newline();
     }
@@ -300,10 +300,10 @@ class HeapChunkProvider {
      * list.
      */
     void consumeUnalignedChunk(UnalignedHeader chunk) {
-        final UnsignedWord chunkSize = chunk.getEnd().subtract(HeapChunk.asPointer(chunk));
+        final UnsignedWord chunkSize = unalignedChunkSize(chunk);
         log().string("[HeapChunkProvider.consumeUnalignedChunk  chunk: ").hex(chunk).string("  chunkSize: ").hex(chunkSize).newline();
 
-        CommittedMemoryProvider.get().free(chunk, chunkSize, CommittedMemoryProvider.UNALIGNED, false);
+        freeUnalignedChunk(chunk);
 
         log().string(" ]").newline();
     }
@@ -357,17 +357,21 @@ class HeapChunkProvider {
     }
 
     protected Log report(Log log, boolean traceHeapChunks) {
-        log.string("[Unused:").newline();
-        log.string("  aligned: ").signed(bytesInUnusedAlignedChunks.get()).string("/").signed(bytesInUnusedAlignedChunks.get().unsignedDivide(HeapPolicy.getAlignedHeapChunkSize()));
+        log.string("[Unused:").indent(true);
+        log.string("aligned: ").signed(bytesInUnusedAlignedChunks.get())
+                        .string("/")
+                        .signed(bytesInUnusedAlignedChunks.get().unsignedDivide(HeapPolicy.getAlignedHeapChunkSize()));
         if (traceHeapChunks) {
             if (unusedAlignedChunks.get().isNonNull()) {
-                log.newline().string("  aligned chunks:");
+                log.newline().string("aligned chunks:").redent(true);
                 for (AlignedHeapChunk.AlignedHeader aChunk = unusedAlignedChunks.get(); aChunk.isNonNull(); aChunk = aChunk.getNext()) {
-                    log.string("  ").hex(aChunk).string(" (").hex(AlignedHeapChunk.getAlignedHeapChunkStart(aChunk)).string("-").hex(aChunk.getTop()).string(")");
+                    log.newline().hex(aChunk)
+                                    .string(" (").hex(AlignedHeapChunk.getAlignedHeapChunkStart(aChunk)).string("-").hex(aChunk.getTop()).string(")");
                 }
+                log.redent(false);
             }
         }
-        log.string("]");
+        log.redent(false).string("]");
         return log;
     }
 
@@ -398,5 +402,44 @@ class HeapChunkProvider {
             }
         }
         return false;
+    }
+
+    /** Return all allocated virtual memory chunks to VirtualMemoryProvider. */
+    @Uninterruptible(reason = "Called from uninterruptible code.", mayBeInlined = true)
+    public final void tearDown() {
+        freeAlignedChunkList(unusedAlignedChunks.get());
+    }
+
+    @Uninterruptible(reason = "Called from uninterruptible code.", mayBeInlined = true)
+    static void freeAlignedChunkList(AlignedHeader first) {
+        for (AlignedHeader chunk = first; chunk.isNonNull();) {
+            AlignedHeader next = chunk.getNext();
+            freeAlignedChunk(chunk);
+            chunk = next;
+        }
+    }
+
+    @Uninterruptible(reason = "Called from uninterruptible code.", mayBeInlined = true)
+    static void freeUnalignedChunkList(UnalignedHeader first) {
+        for (UnalignedHeader chunk = first; chunk.isNonNull();) {
+            UnalignedHeader next = chunk.getNext();
+            freeUnalignedChunk(chunk);
+            chunk = next;
+        }
+    }
+
+    @Uninterruptible(reason = "Called from uninterruptible code.", mayBeInlined = true)
+    private static void freeAlignedChunk(AlignedHeader chunk) {
+        CommittedMemoryProvider.get().free(chunk, HeapPolicy.getAlignedHeapChunkSize(), HeapPolicy.getAlignedHeapChunkAlignment(), false);
+    }
+
+    @Uninterruptible(reason = "Called from uninterruptible code.", mayBeInlined = true)
+    private static void freeUnalignedChunk(UnalignedHeader chunk) {
+        CommittedMemoryProvider.get().free(chunk, unalignedChunkSize(chunk), CommittedMemoryProvider.UNALIGNED, false);
+    }
+
+    @Uninterruptible(reason = "Called from uninterruptible code.", mayBeInlined = true)
+    private static UnsignedWord unalignedChunkSize(UnalignedHeader chunk) {
+        return chunk.getEnd().subtract(HeapChunk.asPointer(chunk));
     }
 }

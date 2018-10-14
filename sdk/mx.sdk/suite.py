@@ -1,11 +1,51 @@
+#
+# Copyright (c) 2018, Oracle and/or its affiliates. All rights reserved.
+# DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
+#
+# The Universal Permissive License (UPL), Version 1.0
+#
+# Subject to the condition set forth below, permission is hereby granted to any
+# person obtaining a copy of this software, associated documentation and/or
+# data (collectively the "Software"), free of charge and under any and all
+# copyright rights in the Software, and any and all patent rights owned or
+# freely licensable by each licensor hereunder covering either (i) the
+# unmodified Software as contributed to or provided by such licensor, or (ii)
+# the Larger Works (as defined below), to deal in both
+#
+# (a) the Software, and
+#
+# (b) any piece of software and/or hardware listed in the lrgrwrks.txt file if
+# one is included with the Software each a "Larger Work" to which the Software
+# is contributed by such licensors),
+#
+# without restriction, including without limitation the rights to copy, create
+# derivative works of, display, perform, and distribute the Software and make,
+# use, sell, offer for sale, import, export, have made, and have sold the
+# Software and the Larger Work(s), and to sublicense the foregoing rights on
+# either these or other terms.
+#
+# This license is subject to the following condition:
+#
+# The above copyright notice and either this complete permission notice or at a
+# minimum a reference to the UPL must be included in all copies or substantial
+# portions of the Software.
+#
+# THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+# IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+# FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+# AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+# LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+# OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+# SOFTWARE.
+#
 suite = {
-  "mxversion" : "5.178.0",
+  "mxversion" : "5.183.0",
   "name" : "sdk",
-  "version" : "1.0.0-rc6",
+  "version" : "1.0.0-rc8",
   "release" : False,
   "sourceinprojectwhitelist" : [],
   "url" : "https://github.com/oracle/graal",
-  "groupId" : "org.graalvm",
+  "groupId" : "org.graalvm.sdk",
   "developer" : {
     "name" : "Graal developers",
     "email" : "graal-dev@openjdk.java.net",
@@ -29,7 +69,7 @@ suite = {
     },
   },
   "snippetsPattern" : ".*(Snippets|doc-files).*",
-  "defaultLicense" : "GPLv2-CPE",
+  "defaultLicense" : "UPL",
   "imports": {},
   "libraries" : {
     "JLINE" : {
@@ -52,7 +92,7 @@ suite = {
         "<package-info>",  # exports all packages containing package-info.java
       ],
       "checkstyle" : "org.graalvm.word",
-      "javaCompliance" : "1.8",
+      "javaCompliance" : "8+",
       "workingSets" : "API,SDK",
     },
     "org.graalvm.polyglot" : {
@@ -62,12 +102,12 @@ suite = {
       "uses" : ["org.graalvm.polyglot.impl.AbstractPolyglotImpl"],
       "exports" : [
         "<package-info>",  # exports all packages containing package-info.java
-        "org.graalvm.polyglot.impl", # exported to truffle
+        "org.graalvm.polyglot.impl to org.graalvm.truffle", # exported to truffle
         "org.graalvm.polyglot",
         "org.graalvm.polyglot.proxy",
       ],
       "checkstyle" : "org.graalvm.word",
-      "javaCompliance" : "1.8",
+      "javaCompliance" : "8+",
       "workingSets" : "API,SDK",
     },
 
@@ -76,9 +116,13 @@ suite = {
       "sourceDirs" : ["src"],
       "dependencies" : [],
       "checkstyle" : "org.graalvm.word",
-      "javaCompliance" : "1.8",
+      "javaCompliance" : "8+",
       "checkstyleVersion" : "8.8",
       "workingSets" : "API,SDK",
+      "exports" : [
+        "<package-info>",  # exports all packages containing package-info.java
+        "org.graalvm.word.impl to jdk.internal.vm.compiler",
+      ],
     },
 
     "org.graalvm.nativeimage" : {
@@ -92,7 +136,7 @@ suite = {
         "<package-info>",  # exports all packages containing package-info.java
       ],
       "checkstyle" : "org.graalvm.word",
-      "javaCompliance" : "1.8",
+      "javaCompliance" : "8+",
       "workingSets" : "API,SDK",
     },
     "org.graalvm.launcher" : {
@@ -103,7 +147,7 @@ suite = {
         "org.graalvm.nativeimage",
         "JLINE",
       ],
-      "javaCompliance" : "1.8",
+      "javaCompliance" : "8+",
       "workingSets" : "Truffle,Tools",
       "checkstyle" : "org.graalvm.word",
     },
@@ -117,7 +161,7 @@ suite = {
         "<package-info>",  # exports all packages containing package-info.java
       ],
       "checkstyle" : "org.graalvm.word",
-      "javaCompliance" : "1.8",
+      "javaCompliance" : "8+",
       "workingSets" : "API,SDK,Test",
     },
     "org.graalvm.collections" : {
@@ -127,7 +171,7 @@ suite = {
         "<package-info>",  # exports all packages containing package-info.java
       ],
       "checkstyle" : "org.graalvm.word",
-      "javaCompliance" : "1.8",
+      "javaCompliance" : "8+",
       "workingSets" : "API,SDK",
     },
     "org.graalvm.collections.test" : {
@@ -138,7 +182,7 @@ suite = {
         "org.graalvm.collections",
       ],
       "checkstyle" : "org.graalvm.word",
-      "javaCompliance" : "1.8",
+      "javaCompliance" : "8+",
       "workingSets" : "API,SDK,Test",
     },
   },
@@ -152,7 +196,7 @@ suite = {
   "distributions" : {
     "GRAAL_SDK" : {
       "subDir" : "src",
-      "moduleName" : "org.graalvm.graal_sdk",
+      "moduleName" : "org.graalvm.sdk",
       "dependencies" : [
         "org.graalvm.polyglot",
         "org.graalvm.nativeimage",

@@ -2,25 +2,41 @@
  * Copyright (c) 2014, 2018, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
- * This code is free software; you can redistribute it and/or modify it
- * under the terms of the GNU General Public License version 2 only, as
- * published by the Free Software Foundation.  Oracle designates this
- * particular file as subject to the "Classpath" exception as provided
- * by Oracle in the LICENSE file that accompanied this code.
+ * The Universal Permissive License (UPL), Version 1.0
  *
- * This code is distributed in the hope that it will be useful, but WITHOUT
- * ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
- * FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License
- * version 2 for more details (a copy is included in the LICENSE file that
- * accompanied this code).
+ * Subject to the condition set forth below, permission is hereby granted to any
+ * person obtaining a copy of this software, associated documentation and/or
+ * data (collectively the "Software"), free of charge and under any and all
+ * copyright rights in the Software, and any and all patent rights owned or
+ * freely licensable by each licensor hereunder covering either (i) the
+ * unmodified Software as contributed to or provided by such licensor, or (ii)
+ * the Larger Works (as defined below), to deal in both
  *
- * You should have received a copy of the GNU General Public License version
- * 2 along with this work; if not, write to the Free Software Foundation,
- * Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301 USA.
+ * (a) the Software, and
  *
- * Please contact Oracle, 500 Oracle Parkway, Redwood Shores, CA 94065 USA
- * or visit www.oracle.com if you need additional information or have any
- * questions.
+ * (b) any piece of software and/or hardware listed in the lrgrwrks.txt file if
+ * one is included with the Software each a "Larger Work" to which the Software
+ * is contributed by such licensors),
+ *
+ * without restriction, including without limitation the rights to copy, create
+ * derivative works of, display, perform, and distribute the Software and make,
+ * use, sell, offer for sale, import, export, have made, and have sold the
+ * Software and the Larger Work(s), and to sublicense the foregoing rights on
+ * either these or other terms.
+ *
+ * This license is subject to the following condition:
+ *
+ * The above copyright notice and either this complete permission notice or at a
+ * minimum a reference to the UPL must be included in all copies or substantial
+ * portions of the Software.
+ *
+ * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+ * IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+ * FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+ * AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+ * LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+ * OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+ * SOFTWARE.
  */
 package com.oracle.truffle.api;
 
@@ -50,6 +66,7 @@ import org.graalvm.options.OptionKey;
 import org.graalvm.options.OptionValues;
 import org.graalvm.polyglot.Context;
 import org.graalvm.polyglot.Engine;
+import org.graalvm.polyglot.Language;
 import org.graalvm.polyglot.Value;
 import org.graalvm.polyglot.io.FileSystem;
 
@@ -269,15 +286,65 @@ public abstract class TruffleLanguage<C> {
         String version() default "inherit";
 
         /**
-         * List of MIME types associated with your language.
+         * @since 0.8 or earlier
+         * @deprecated split up MIME types into {@link #characterMimeTypes() character} and
+         *             {@link #byteMimeTypes() byte} based MIME types.
+         */
+        @Deprecated
+        String[] mimeType() default {};
+
+        /**
+         * Returns the default MIME type of this language. The default MIME type allows embedders
+         * and other language or instruments to find out how content is interpreted if no MIME type
+         * was specified. The default MIME type must be specified in the list of supported
+         * {@link #characterMimeTypes() character} or {@link #byteMimeTypes() byte} based MIME
+         * types.
+         * <p>
+         * The default MIME type is mandatory if more than one supported MIME type was specified. If
+         * no default MIME type and no supported MIME types were specified then all sources for this
+         * language will be interpreted as {@link Source#hasCharacters() character} based sources.
          *
-         * Users will use them when {@link org.graalvm.polyglot.Source#findLanguage(String)} is used
-         * by the embedder to lookup a language id} for a mime type.
+         * @see LanguageInfo#getDefaultMimeType()
+         * @see Language#getDefaultMimeType()
+         * @see #characterMimeTypes()
+         * @see #byteMimeTypes()
+         * @since 1.0
+         */
+        String defaultMimeType() default "";
+
+        /**
+         * List of MIME types supported by this language which sources should be interpreted as
+         * {@link Source#hasCharacters() character} based sources. Languages may use MIME types to
+         * differentiate supported source kinds. If a MIME type is declared as supported then the
+         * language needs to be able to {@link TruffleLanguage#parse(ParsingRequest) parse} sources
+         * of this kind. If only one supported MIME type was specified by a language then it will be
+         * used as {@link #defaultMimeType() default} MIME type. If no supported character and byte
+         * based MIME types are specified then all sources will be interpreted as
+         * {@link Source#hasCharacters() character} based.
          *
          * @return array of MIME types assigned to your language files
-         * @since 0.8 or earlier
+         * @see #defaultMimeType()
+         * @see #byteMimeTypes()
+         * @since 1.0
          */
-        String[] mimeType();
+        String[] characterMimeTypes() default {};
+
+        /**
+         * List of MIME types supported by this language which sources should be interpreted as
+         * {@link Source#hasBytes() byte} based sources. Languages may use MIME types to
+         * differentiate supported source kinds. If a MIME type is declared as supported then the
+         * language needs to be able to {@link TruffleLanguage#parse(ParsingRequest) parse} sources
+         * of this kind. If only one supported MIME type was specified by a language then it will be
+         * used as {@link #defaultMimeType() default} MIME type. If no supported character and byte
+         * based MIME types are specified then all sources will be interpreted as
+         * {@link Source#hasCharacters() character} based.
+         *
+         * @return array of MIME types assigned to your language files
+         * @see #defaultMimeType()
+         * @see #characterMimeTypes()
+         * @since 1.0
+         */
+        String[] byteMimeTypes() default {};
 
         /**
          * Specifies if the language is suitable for interactive evaluation of {@link Source
@@ -1506,7 +1573,7 @@ public abstract class TruffleLanguage<C> {
          */
         @SuppressWarnings("static-method")
         public boolean isHostObject(Object value) {
-            return AccessAPI.javaAccess().isHostObject(value);
+            return AccessAPI.engineAccess().isHostObject(value);
         }
 
         /**
@@ -1521,7 +1588,7 @@ public abstract class TruffleLanguage<C> {
                 CompilerDirectives.transferToInterpreter();
                 throw new ClassCastException();
             }
-            return AccessAPI.javaAccess().asHostObject(value);
+            return AccessAPI.engineAccess().asHostObject(value);
         }
 
         /**
@@ -1571,7 +1638,7 @@ public abstract class TruffleLanguage<C> {
          */
         @SuppressWarnings("static-method")
         public boolean isHostFunction(Object value) {
-            return AccessAPI.javaAccess().isHostFunction(value);
+            return AccessAPI.engineAccess().isHostFunction(value);
         }
 
         /**
@@ -1639,7 +1706,7 @@ public abstract class TruffleLanguage<C> {
          */
         @SuppressWarnings("static-method")
         public boolean isHostSymbol(Object guestObject) {
-            return AccessAPI.javaAccess().isHostSymbol(guestObject);
+            return AccessAPI.engineAccess().isHostSymbol(guestObject);
         }
 
         /**
@@ -1888,17 +1955,11 @@ public abstract class TruffleLanguage<C> {
         }
 
         /**
-         * Builds new {@link Source source} from a {@link TruffleFile}. Once the source is built the
-         * {@link Source#getName() name} will become {@link TruffleFile#getName()} and the
-         * {@link Source#getCharacters()} will be loaded from the {@link TruffleFile file}, unless
-         * {@link com.oracle.truffle.api.source.Source.Builder#content(java.lang.String) redefined}
-         * on the builder.
-         *
-         * @param file the {@link TruffleFile} to create {@link Source} for
-         * @return new builder to configure additional properties
          * @since 1.0
+         * @deprecated use {@link Source#newBuilder(String, TruffleFile)} instead.
          */
-        @SuppressWarnings("static-method")
+        @SuppressWarnings({"static-method", "deprecation"})
+        @Deprecated
         public Source.Builder<IOException, RuntimeException, RuntimeException> newSourceBuilder(final TruffleFile file) {
             Objects.requireNonNull(file, "File must be non null");
             return Source.newBuilder(new TruffleFile.FileAdapter(file));
@@ -1935,8 +1996,7 @@ public abstract class TruffleLanguage<C> {
         Object findMetaObjectImpl(Object obj) {
             Object c = getLanguageContext();
             if (c != UNSET_CONTEXT) {
-                final Object rawValue = AccessAPI.engineAccess().findOriginalObject(obj);
-                return getSpi().findMetaObject(c, rawValue);
+                return getSpi().findMetaObject(c, obj);
             } else {
                 return null;
             }
@@ -1945,16 +2005,14 @@ public abstract class TruffleLanguage<C> {
         SourceSection findSourceLocation(Object obj) {
             Object c = getLanguageContext();
             if (c != UNSET_CONTEXT) {
-                final Object rawValue = AccessAPI.engineAccess().findOriginalObject(obj);
-                return getSpi().findSourceLocation(c, rawValue);
+                return getSpi().findSourceLocation(c, obj);
             } else {
                 return null;
             }
         }
 
         boolean isObjectOfLanguage(Object obj) {
-            final Object rawValue = AccessAPI.engineAccess().findOriginalObject(obj);
-            return getSpi().isObjectOfLanguage(rawValue);
+            return getSpi().isObjectOfLanguage(obj);
         }
 
         Iterable<Scope> findLocalScopes(Node node, Frame frame) {
@@ -2186,10 +2244,6 @@ public abstract class TruffleLanguage<C> {
 
         static InteropSupport interopAccess() {
             return API.interopSupport();
-        }
-
-        static JavaInteropSupport javaAccess() {
-            return API.javaInteropSupport();
         }
 
         @Override
@@ -2484,6 +2538,11 @@ public abstract class TruffleLanguage<C> {
         }
 
         @Override
+        public File asFile(TruffleFile file) {
+            return new FileAdapter(file);
+        }
+
+        @Override
         public void configureLoggers(Object polyglotContext, Map<String, Level> logLevels) {
             if (logLevels == null) {
                 TruffleLogger.LoggerCache.getInstance().removeLogLevelsForContext(polyglotContext);
@@ -2563,11 +2622,9 @@ class TruffleLanguageSnippets {
         protected void initializeContext(Context context) throws IOException {
             // called "later" to finish the initialization
             // for example call into another language
-            Source source =
-                Source.newBuilder("function mul(x, y) { return x * y }").
-                name("mul.js").
-                mimeType("text/javascript").
-                build();
+            Source source = Source.newBuilder("js",
+                                "function(x, y) x * y",
+                                "mul.js").build();
             context.mul = context.env.parse(source);
         }
     }
@@ -2637,10 +2694,9 @@ class TruffleLanguageSnippets {
 
     // BEGIN: TruffleLanguageSnippets#parseWithParams
     public void parseWithParams(Env env) {
-        Source multiply = Source.newBuilder("a * b").
-            mimeType("text/javascript").
-            name("mul.js").
-            build();
+        Source multiply = Source.newBuilder("js",
+                        "a * b",
+                        "mul.js").build();
         CallTarget method = env.parse(multiply, "a", "b");
         Number fortyTwo = (Number) method.call(6, 7);
         assert 42 == fortyTwo.intValue();

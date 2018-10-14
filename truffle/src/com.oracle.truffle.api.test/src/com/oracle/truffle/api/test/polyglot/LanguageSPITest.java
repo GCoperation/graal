@@ -1,26 +1,42 @@
 /*
- * Copyright (c) 2017, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2017, 2018, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
- * This code is free software; you can redistribute it and/or modify it
- * under the terms of the GNU General Public License version 2 only, as
- * published by the Free Software Foundation.  Oracle designates this
- * particular file as subject to the "Classpath" exception as provided
- * by Oracle in the LICENSE file that accompanied this code.
+ * The Universal Permissive License (UPL), Version 1.0
  *
- * This code is distributed in the hope that it will be useful, but WITHOUT
- * ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
- * FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License
- * version 2 for more details (a copy is included in the LICENSE file that
- * accompanied this code).
+ * Subject to the condition set forth below, permission is hereby granted to any
+ * person obtaining a copy of this software, associated documentation and/or
+ * data (collectively the "Software"), free of charge and under any and all
+ * copyright rights in the Software, and any and all patent rights owned or
+ * freely licensable by each licensor hereunder covering either (i) the
+ * unmodified Software as contributed to or provided by such licensor, or (ii)
+ * the Larger Works (as defined below), to deal in both
  *
- * You should have received a copy of the GNU General Public License version
- * 2 along with this work; if not, write to the Free Software Foundation,
- * Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301 USA.
+ * (a) the Software, and
  *
- * Please contact Oracle, 500 Oracle Parkway, Redwood Shores, CA 94065 USA
- * or visit www.oracle.com if you need additional information or have any
- * questions.
+ * (b) any piece of software and/or hardware listed in the lrgrwrks.txt file if
+ * one is included with the Software each a "Larger Work" to which the Software
+ * is contributed by such licensors),
+ *
+ * without restriction, including without limitation the rights to copy, create
+ * derivative works of, display, perform, and distribute the Software and make,
+ * use, sell, offer for sale, import, export, have made, and have sold the
+ * Software and the Larger Work(s), and to sublicense the foregoing rights on
+ * either these or other terms.
+ *
+ * This license is subject to the following condition:
+ *
+ * The above copyright notice and either this complete permission notice or at a
+ * minimum a reference to the UPL must be included in all copies or substantial
+ * portions of the Software.
+ *
+ * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+ * IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+ * FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+ * AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+ * LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+ * OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+ * SOFTWARE.
  */
 package com.oracle.truffle.api.test.polyglot;
 
@@ -47,7 +63,6 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
-import java.util.concurrent.TimeoutException;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.Consumer;
@@ -484,7 +499,7 @@ public class LanguageSPITest {
                 Throwable[] error = new Throwable[1];
                 Thread thread = new Thread(() -> {
                     try {
-                        Source source = Source.newBuilder("").language(LanguageSPITestLanguage.ID).name("s").build();
+                        Source source = Source.newBuilder(LanguageSPITestLanguage.ID, "", "s").build();
                         boolean parsingFailed = false;
                         try {
                             // execute Truffle code in a fresh thread fails
@@ -546,7 +561,7 @@ public class LanguageSPITest {
                 Object p = innerContext.enter();
                 LanguageContext innerLangContext = LanguageSPITestLanguage.getContext();
                 innerContext.leave(p);
-                return innerLangContext;
+                return env.asGuestValue(innerLangContext);
             }
         }).asHostObject();
         context.close();
@@ -558,12 +573,24 @@ public class LanguageSPITest {
     public void testParseOtherLanguage() {
         Context context = Context.newBuilder().build();
         eval(context, new Function<Env, Object>() {
+            @SuppressWarnings("deprecation")
             public Object apply(Env t) {
                 assertCorrectTarget(t.parse(Source.newBuilder("").language(ContextAPITestLanguage.ID).name("").build()));
                 assertCorrectTarget(t.parse(Source.newBuilder("").mimeType(ContextAPITestLanguage.MIME).name("").build()));
                 // this is here for compatibility because mime types and language ids were allowed
                 // in between.
                 assertCorrectTarget(t.parse(Source.newBuilder("").mimeType(ContextAPITestLanguage.ID).name("").build()));
+
+                assertCorrectTarget(t.parse(Source.newBuilder(ContextAPITestLanguage.ID, "", "").name("").build()));
+                assertCorrectTarget(t.parse(Source.newBuilder(ContextAPITestLanguage.ID, "", "").mimeType(ContextAPITestLanguage.MIME).name("").build()));
+                // this is here for compatibility because mime types and language ids were allowed
+                // in between.
+                try {
+                    t.parse(Source.newBuilder(ContextAPITestLanguage.ID, "", "").mimeType("text/invalid").build());
+                    Assert.fail();
+                } catch (IllegalArgumentException e) {
+                    // illegal mime type
+                }
                 return null;
             }
 
@@ -599,7 +626,7 @@ public class LanguageSPITest {
         context2.close();
     }
 
-    @TruffleLanguage.Registration(id = OneContextLanguage.ID, name = OneContextLanguage.ID, version = "1.0", mimeType = OneContextLanguage.ID, contextPolicy = ContextPolicy.EXCLUSIVE)
+    @TruffleLanguage.Registration(id = OneContextLanguage.ID, name = OneContextLanguage.ID, version = "1.0", contextPolicy = ContextPolicy.EXCLUSIVE)
     public static class OneContextLanguage extends MultiContextLanguage {
         static final String ID = "OneContextLanguage";
 
@@ -614,7 +641,7 @@ public class LanguageSPITest {
 
     }
 
-    @TruffleLanguage.Registration(id = MultiContextLanguage.ID, name = MultiContextLanguage.ID, version = "1.0", mimeType = MultiContextLanguage.ID, contextPolicy = ContextPolicy.SHARED)
+    @TruffleLanguage.Registration(id = MultiContextLanguage.ID, name = MultiContextLanguage.ID, version = "1.0", contextPolicy = ContextPolicy.SHARED)
     public static class MultiContextLanguage extends ProxyLanguage {
 
         static final String ID = "MultiContextLanguage";
@@ -1284,7 +1311,7 @@ public class LanguageSPITest {
         try (Context context = Context.create(LanguageSPITestLanguage.ID)) {
             final String text = "0123456789";
             LanguageSPITestLanguage.runinside = (env) -> {
-                Source src = Source.newBuilder(text).mimeType(LanguageSPITestLanguage.ID).name("test.txt").build();
+                Source src = Source.newBuilder(LanguageSPITestLanguage.ID, text, "test.txt").build();
                 throw new ParseException(src, 1, 2);
             };
             try {
@@ -1582,7 +1609,7 @@ public class LanguageSPITest {
     }
 
     @Test
-    public void testPolyglotBindingsMultiThreaded() throws InterruptedException, ExecutionException, TimeoutException {
+    public void testPolyglotBindingsMultiThreaded() throws Throwable {
         ProxyLanguage.setDelegate(new ProxyLanguage() {
 
             @Override
@@ -1622,7 +1649,11 @@ public class LanguageSPITest {
         }
 
         for (Future<?> future : futures) {
-            future.get(100000, TimeUnit.MILLISECONDS);
+            try {
+                future.get(100000, TimeUnit.MILLISECONDS);
+            } catch (ExecutionException e) {
+                throw e.getCause();
+            }
         }
 
         service.shutdown();
@@ -1694,7 +1725,7 @@ public class LanguageSPITest {
             org.graalvm.polyglot.SourceSection sourceSection = res.getSourceLocation();
             assertNotNull(sourceSection);
             assertTrue(text.contentEquals(sourceSection.getCharacters()));
-            res = context.asValue(new SourceHolder(Source.newBuilder(text).name("test").mimeType(ProxyLanguage.ID).build()));
+            res = context.asValue(new SourceHolder(Source.newBuilder(ProxyLanguage.ID, text, null).build()));
             sourceSection = res.getSourceLocation();
             assertNotNull(sourceSection);
             assertTrue(text.contentEquals(sourceSection.getCharacters()));
@@ -1730,7 +1761,7 @@ public class LanguageSPITest {
             assertNotNull(res);
             String toString = res.toString();
             assertEquals(text, toString);
-            res = context.asValue(new SourceHolder(Source.newBuilder(text).name("test").mimeType(ProxyLanguage.ID).build()));
+            res = context.asValue(new SourceHolder(Source.newBuilder(ProxyLanguage.ID, text, null).build()));
             toString = res.toString();
             assertEquals(text, toString);
         }
@@ -1738,8 +1769,8 @@ public class LanguageSPITest {
 
     static final String INHERITED_VERSION = "SPIInheritedVersionLanguage";
 
-    @TruffleLanguage.Registration(id = INHERITED_VERSION, name = "", mimeType = {INHERITED_VERSION})
-    public static class InheritedVersionLanguage extends LanguageSPIOrderTest.BaseLang {
+    @TruffleLanguage.Registration(id = INHERITED_VERSION, name = "")
+    public static class InheritedVersionLanguage extends ProxyLanguage {
     }
 
     @Test
@@ -1764,4 +1795,39 @@ public class LanguageSPITest {
             return null;
         }
     }
+
+    static final Source TEST_SOURCE = Source.newBuilder("", "", "testLanguageErrorDuringInitialization").build();
+
+    @SuppressWarnings("serial")
+    static class TestError extends RuntimeException implements TruffleException {
+
+        public SourceSection getSourceLocation() {
+            return TEST_SOURCE.createSection(0, 0);
+        }
+
+        public Node getLocation() {
+            return null;
+        }
+
+    }
+
+    @Test
+    public void testLanguageErrorDuringInitialization() {
+        ProxyLanguage.setDelegate(new ProxyLanguage() {
+            @Override
+            protected void initializeContext(LanguageContext c) throws Exception {
+                throw new TestError();
+            }
+        });
+
+        Context context = Context.create();
+        try {
+            context.eval(ProxyLanguage.ID, "");
+            fail();
+        } catch (PolyglotException e) {
+            assertTrue(e.isGuestException());
+            assertEquals("testLanguageErrorDuringInitialization", e.getSourceLocation().getSource().getName());
+        }
+    }
+
 }

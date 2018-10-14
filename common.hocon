@@ -1,14 +1,14 @@
 # overlay version
-overlay = 0b7edfaa83017fcf38687f2615533dbdbe21dab1
+overlay = e2d86bcb06922e4d9017e675376ed7515902392c
 
 # oraclejdk* are released OracleJDK binaries
 # labsjdk* are JDKs based on OracleJDK binaries
 # openjdk8 JDKs on Linux are built by Oracle Labs
 # openjdk8 JDKs on macOS are based on AdoptOpenJDK binaries
 jdks: {
-  labsjdk8:      {name : labsjdk,   version : "8u172-jvmci-0.46", platformspecific: true}
-  openjdk8:      {name : openjdk,   version : "8u172-jvmci-0.46", platformspecific: true}
-  labsjdk8Debug: {name : labsjdk,   version : "8u172-jvmci-0.46-fastdebug", platformspecific: true}
+  labsjdk8:      {name : labsjdk,   version : "8u172-jvmci-0.48", platformspecific: true}
+  openjdk8:      {name : openjdk,   version : "8u172-jvmci-0.48", platformspecific: true}
+  labsjdk8Debug: {name : labsjdk,   version : "8u172-jvmci-0.48-fastdebug", platformspecific: true}
   oraclejdk11:   {name : oraclejdk, version : "11+25", platformspecific: true}
 
   # Snapshot of http://hg.openjdk.java.net/jdk/jdk
@@ -29,21 +29,23 @@ labsjdk8Debug : { downloads : { JAVA_HOME : ${jdks.labsjdk8Debug}, EXTRA_JAVA_HO
 
 openjdk8 :        { downloads : { JAVA_HOME : ${jdks.openjdk8} }}
 
-oraclejdk11 :     { downloads : { JAVA_HOME : ${jdks.oraclejdk11}, EXTRA_JAVA_HOMES : { pathlist :[ ${jdks.labsjdk8} ]} }}
+oraclejdk11 :     { downloads : { JAVA_HOME : ${jdks.oraclejdk11} }}
 
 common : ${mx} {
   timelimit : "30:00"
   catch_files : [
     "Graal diagnostic output saved in (?P<filename>.+\.zip)"
   ]
+  packages : {
+    "pip:astroid" : "==1.1.0"
+    "pip:pylint" : "==1.1.0"
+  }
 }
 
 linux : ${common} {
   packages : {
     git : ">=1.8.3"
     mercurial : ">=2.2"
-    "pip:astroid" : "==1.1.0"
-    "pip:pylint" : "==1.1.0"
     "apache/ant": ">=1.9.4"
   }
 }
@@ -52,20 +54,17 @@ solaris : ${common} {
   packages : {
     git : ">=1.8.3"
     mercurial : ">=2.2"
-    "pip:astroid" : "==1.1.0"
-    "pip:pylint" : "==1.1.0"
     "apache/ant": ">=1.9.4"
   }
 }
 
 darwin : ${common} {
-  packages : {
-    "pip:astroid" : "==1.1.0"
-    "pip:pylint" : "==1.1.0"
-  }
   environment : {
     PATH : "/usr/local/bin:$PATH"
   }
+}
+
+windows : ${common} {
 }
 
 linux-amd64 : ${linux} {
@@ -74,6 +73,10 @@ linux-amd64 : ${linux} {
 
 darwin-amd64 : ${darwin} {
   capabilities : [darwin_next, amd64]
+}
+
+windows-amd64 : ${windows} {
+  capabilities : [windows, amd64]
 }
 
 solaris-sparcv9 : ${solaris} {
@@ -127,14 +130,6 @@ darwin-deploy : ${darwin} ${maven-download-unix} {
   }
 }
 
-maven-deploy-dry-run : {
-  targets : [gate]
-  run : [
-    ["mx", "--strict-compliance", "build"]
-    ["mx", "maven-deploy", "--validate", "full", "--licenses", "GPLv2-CPE,UPL", "--dry-run", "ossrh", "https://this-is-only-a-test"]
-  ]
-}
-
 svm-common: ${mx} {
   environment: {
     DEFAULT_VM: "server"
@@ -175,6 +170,13 @@ svm-capabilities-manycores : {
 }
 
 svm-common-darwin: ${svm-common} ${darwin-amd64} {
+  timelimit: "45:00"
+}
+
+svm-common-windows: ${svm-common} ${windows-amd64} {
+  packages : {
+    msvc : "==10.0"
+  }
   timelimit: "45:00"
 }
 

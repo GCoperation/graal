@@ -308,10 +308,12 @@ public final class TruffleDebugger extends DebuggerDomain {
         }
     }
 
-    private CallFrame[] createCallFrames(Iterable<DebugStackFrame> frames) {
+    private CallFrame[] createCallFrames(Iterable<DebugStackFrame> frames, DebugValue returnValue) {
         List<CallFrame> cfs = new ArrayList<>();
         int depth = 0;
+        int depthAll = -1;
         for (DebugStackFrame frame : frames) {
+            depthAll++;
             SourceSection sourceSection = frame.getSourceSection();
             if (sourceSection == null) {
                 continue;
@@ -330,7 +332,7 @@ public final class TruffleDebugger extends DebuggerDomain {
             DebugScope dscope;
             try {
                 dscope = frame.getScope();
-            } catch (Exception ex) {
+            } catch (DebugException ex) {
                 PrintWriter err = context.getErr();
                 if (err != null) {
                     err.println("getScope() has caused " + ex);
@@ -341,6 +343,9 @@ public final class TruffleDebugger extends DebuggerDomain {
             String scopeType = "block";
             boolean wasFunction = false;
             SourceSection functionSourceSection = null;
+            if (dscope == null) {
+                functionSourceSection = sourceSection;
+            }
             while (dscope != null) {
                 if (wasFunction) {
                     scopeType = "closure";
@@ -357,7 +362,7 @@ public final class TruffleDebugger extends DebuggerDomain {
             }
             try {
                 dscope = ds.getTopScope(source.getLanguage());
-            } catch (Exception ex) {
+            } catch (DebugException ex) {
                 PrintWriter err = context.getErr();
                 if (err != null) {
                     err.println("getTopScope() has caused " + ex);
@@ -371,8 +376,12 @@ public final class TruffleDebugger extends DebuggerDomain {
                 }
                 dscope = getParent(dscope);
             }
-            CallFrame cf = new CallFrame(frame, depth++, script, sourceSection,
-                            functionSourceSection, null, scopes.toArray(new Scope[scopes.size()]));
+            RemoteObject returnObj = null;
+            if (depthAll == 0 && returnValue != null) {
+                returnObj = context.getRemoteObjectsHandler().getRemote(returnValue);
+            }
+            CallFrame cf = new CallFrame(frame, depth++, script, sourceSection, functionSourceSection,
+                            null, returnObj, scopes.toArray(new Scope[scopes.size()]));
             cfs.add(cf);
         }
         return cfs.toArray(new CallFrame[cfs.size()]);
@@ -388,7 +397,7 @@ public final class TruffleDebugger extends DebuggerDomain {
         DebugScope parentScope;
         try {
             parentScope = dscope.getParent();
-        } catch (Exception ex) {
+        } catch (DebugException ex) {
             PrintWriter err = context.getErr();
             if (err != null) {
                 err.println("Scope.getParent() has caused " + ex);
@@ -635,6 +644,35 @@ public final class TruffleDebugger extends DebuggerDomain {
         }
     }
 
+    @Override
+    public void setReturnValue(CallArgument newValue) throws CommandProcessException {
+        if (newValue == null) {
+            throw new CommandProcessException("A newValue required.");
+        }
+        try {
+            context.executeInSuspendThread(new SuspendThreadExecutable<Void>() {
+                @Override
+                public Void executeCommand() throws CommandProcessException {
+                    DebuggerSuspendedInfo susp = suspendedInfo;
+                    if (susp != null) {
+                        SuspendedEvent suspendedEvent = susp.getSuspendedEvent();
+                        DebugValue returnValue = suspendedEvent.getReturnValue();
+                        context.setValue(returnValue, newValue);
+                        susp.getSuspendedEvent().setReturnValue(returnValue);
+                    }
+                    return null;
+                }
+
+                @Override
+                public Void processException(DebugException dex) {
+                    return null;
+                }
+            });
+        } catch (NoSuspendedThreadException ex) {
+            throw new CommandProcessException(ex.getLocalizedMessage());
+        }
+    }
+
     public static boolean sourceMatchesBlackboxPatterns(Source source, Pattern[] patterns) {
         String uri = ScriptsHandler.getNiceStringFromURI(source.getURI());
         for (Pattern pattern : patterns) {
@@ -760,7 +798,7 @@ public final class TruffleDebugger extends DebuggerDomain {
                     runningUnwind = false;
                 }
                 JSONObject jsonParams = new JSONObject();
-                CallFrame[] callFrames = createCallFrames(se.getStackFrames());
+                CallFrame[] callFrames = createCallFrames(se.getStackFrames(), se.getReturnValue());
                 suspendedInfo = new DebuggerSuspendedInfo(se, callFrames);
                 context.setSuspendedInfo(suspendedInfo);
                 Event paused;

@@ -1,7 +1,23 @@
 suite = {
-  "mxversion" : "5.149.0",
+  "mxversion" : "5.176.0",
 
   "name" : "regex",
+
+  "version" : "1.0.0-rc8",
+  "release" : False,
+  "groupId" : "org.graalvm.regex",
+  "url" : "http://www.graalvm.org/",
+  "developer" : {
+    "name" : "Truffle and Graal developers",
+    "email" : "graalvm-users@oss.oracle.com",
+    "organization" : "Graal",
+    "organizationUrl" : "http://www.graalvm.org/",
+  },
+  "scm" : {
+    "url" : "https://github.com/oracle/graal",
+    "read" : "https://github.com/oracle/graal.git",
+    "write" : "git@github.com:oracle/graal.git",
+  },
 
   "imports" : {
     "suites": [
@@ -33,7 +49,7 @@ suite = {
         "com.oracle.truffle.regex.result",
       ],
       "checkstyleVersion" : "8.8",
-      "javaCompliance" : "1.8",
+      "javaCompliance" : "8+",
       "workingSets" : "Truffle,Regex",
     },
 
@@ -45,7 +61,7 @@ suite = {
         "mx:JUNIT",
       ],
       "checkstyle" : "com.oracle.truffle.regex",
-      "javaCompliance" : "1.8",
+      "javaCompliance" : "8+",
       "workingSets" : "Truffle,Regex",
     },
   },
@@ -58,6 +74,11 @@ suite = {
       "distDependencies" : [
         "truffle:TRUFFLE_API",
       ],
+      "maven" : {
+        "artifactId" : "regex",
+      },
+      "description" : "Truffle regular expressions language.",
+      "allowsJavadocWarnings": True,
     },
 
     "TREGEX_UNIT_TESTS" : {

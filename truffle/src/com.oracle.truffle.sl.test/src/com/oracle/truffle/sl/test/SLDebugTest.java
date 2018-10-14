@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2012, 2016, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2012, 2018, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * The Universal Permissive License (UPL), Version 1.0
@@ -320,7 +320,7 @@ public class SLDebugTest {
         }
     }
 
-    @Test(expected = PolyglotException.class)
+    @Test
     public void testTimeboxing() throws Throwable {
         final Source endlessLoop = slCode("function main() {\n" +
                         "  i = 1; \n" +
@@ -331,12 +331,12 @@ public class SLDebugTest {
                         "}\n");
 
         final Context context = Context.create("sl");
-
+        Debugger debugger = context.getEngine().getInstruments().get("debugger").lookup(Debugger.class);
         Timer timer = new Timer();
         timer.schedule(new TimerTask() {
             @Override
             public void run() {
-                context.getEngine().getInstruments().get("debugger").lookup(Debugger.class).startSession(new SuspendedCallback() {
+                debugger.startSession(new SuspendedCallback() {
                     public void onSuspend(SuspendedEvent event) {
                         event.prepareKill();
                     }
@@ -344,7 +344,13 @@ public class SLDebugTest {
             }
         }, 0, 10);
 
-        context.eval(endlessLoop);
+        try {
+            context.eval(endlessLoop); // throws KillException, wrapped by PolyglotException
+            Assert.fail();
+        } catch (PolyglotException pex) {
+            Assert.assertTrue(pex.isCancelled());
+        }
+        timer.cancel();
     }
 
     @Test
